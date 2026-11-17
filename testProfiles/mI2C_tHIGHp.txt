@@ -1,0 +1,3 @@
+Clock High Time (tHIGH)
+Time from SCL rising edge reaching 70% to SCL falling edge reaching 70%.
+SDA must be either high or low, but not changing during this time.

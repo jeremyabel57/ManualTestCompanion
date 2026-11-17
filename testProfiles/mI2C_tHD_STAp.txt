@@ -1,0 +1,4 @@
+Start Condition Hold Time (tHD;STA)
+While SCL is high, time from SDA falling edge reaching 30% to SCL falling edge reaching 70%.
+
+Start Condition: SDA fall while SCL high.

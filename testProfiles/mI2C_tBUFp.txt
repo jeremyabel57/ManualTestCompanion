@@ -1,0 +1,6 @@
+Bus Free Time (tBUF)
+Measured between Stop and Start condition, look for shortest time measurement.
+While SCL is high, measure from when rising edge of SDA reaches 70% to when falling edge of SDA reaches 70%.
+
+Start Condition: SDA fall while SCL high.
+Stop Condition: SDA rise while SCL high.

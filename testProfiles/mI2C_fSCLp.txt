@@ -1,0 +1,3 @@
+Clock Frequency (fSCL)
+Measured during the transmissions of the address/data bits.
+NOT including start, stop, repeat start conditions, nor tbuf.

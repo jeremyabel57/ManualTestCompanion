@@ -1,0 +1,5 @@
+Start Condition Setup Time (tSU;STA)
+Measured on repeat start conditions (start condition without proceeding stop condition).
+While SDA is high, time from SCL rising edge reaching 70% to SDA falling edge reaching 70%.
+
+Start Condition: SDA fall while SCL high.

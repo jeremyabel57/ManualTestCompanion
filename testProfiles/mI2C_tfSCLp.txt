@@ -1,0 +1,2 @@
+Clock Fall Time (tfSCL)
+Falling edge of SCL, measured from 70% to 30%.

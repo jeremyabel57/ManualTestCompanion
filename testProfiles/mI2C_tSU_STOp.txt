@@ -1,0 +1,4 @@
+Stop Condition Setup Time (tSU;STO)
+While SDA is low, time from SCL rising edge reaching 70% to SDA rising edge reaching 30%.
+
+Stop Condition: SDA rise while SCL high.

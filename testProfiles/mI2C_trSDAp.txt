@@ -1,0 +1,2 @@
+Data Rise Time (trSDA)
+Rising edge of SDA, measured from 30% to 70%.

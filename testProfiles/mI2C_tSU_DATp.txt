@@ -1,0 +1,3 @@
+Data Setup Time (tSU;DAT)
+Time from SDA transition (either rising at 70% or falling at 30%) to SCL rising edge reaching 30%.
+Do not use the SCL rising edge immediately before a Stop Condition (SDA rise while SCL high), use an SCL rise before that one.

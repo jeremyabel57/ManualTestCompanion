@@ -1,0 +1,82 @@
+# SciTE session file
+
+buffer.1.path=C:\Users\jabelx\OneDrive - Intel Corporation\Documents\scripts\ManualTestCompanion\ManualTestCompanion.au3
+buffer.1.position=1
+buffer.1.scroll=0
+
+buffer.2.path=C:\Users\jabelx\OneDrive - Intel Corporation\Documents\scripts\ManualTestCompanion\tabMeasure.au3
+buffer.2.position=1
+buffer.2.scroll=0
+
+buffer.3.path=C:\Users\jabelx\OneDrive - Intel Corporation\Documents\scripts\ManualTestCompanion\tabDiag.au3
+buffer.3.position=1
+buffer.3.scroll=0
+
+buffer.4.path=C:\Users\jabelx\OneDrive - Intel Corporation\Documents\scripts\ManualTestCompanion\visascpi.au3
+buffer.4.position=1
+buffer.4.scroll=0
+
+buffer.5.path=C:\Users\jabelx\OneDrive - Intel Corporation\Documents\scripts\ManualTestCompanion\visascpiQueue.au3
+buffer.5.position=1
+buffer.5.scroll=0
+
+buffer.6.path=C:\Users\jabelx\OneDrive - Intel Corporation\Documents\scripts\ManualTestCompanion\winfuncs.au3
+buffer.6.position=1
+buffer.6.scroll=0
+
+buffer.7.path=C:\Users\jabelx\OneDrive - Intel Corporation\Documents\scripts\ManualTestCompanion\winmgmt.au3
+buffer.7.position=1
+buffer.7.scroll=0
+
+buffer.8.path=C:\Users\jabelx\OneDrive - Intel Corporation\Documents\scripts\ManualTestCompanion\webview2tab.au3
+buffer.8.position=1
+buffer.8.scroll=0
+buffer.8.current=1
+
+buffer.9.path=C:\Users\jabelx\OneDrive - Intel Corporation\Documents\scripts\ManualTestCompanion\datatypes.au3
+buffer.9.position=1
+buffer.9.scroll=0
+
+buffer.10.path=C:\Users\jabelx\OneDrive - Intel Corporation\Documents\scripts\ManualTestCompanion\deque.au3
+buffer.10.position=1
+buffer.10.scroll=0
+
+buffer.11.path=C:\Users\jabelx\OneDrive - Intel Corporation\Documents\scripts\ManualTestCompanion\filemisc.au3
+buffer.11.position=1
+buffer.11.scroll=0
+
+buffer.12.path=C:\Users\jabelx\OneDrive - Intel Corporation\Documents\scripts\ManualTestCompanion\misc.au3
+buffer.12.position=1
+buffer.12.scroll=0
+
+buffer.13.path=C:\Users\jabelx\OneDrive - Intel Corporation\Documents\scripts\ManualTestCompanion\myconstants.au3
+buffer.13.position=1
+buffer.13.scroll=0
+
+buffer.14.path=C:\Users\jabelx\OneDrive - Intel Corporation\Documents\scripts\ManualTestCompanion\mydebug.au3
+buffer.14.position=1
+buffer.14.scroll=0
+
+buffer.15.path=C:\Users\jabelx\OneDrive - Intel Corporation\Documents\scripts\ManualTestCompanion\controlBar.au3
+buffer.15.position=1
+buffer.15.scroll=0
+
+buffer.16.path=C:\Users\jabelx\OneDrive - Intel Corporation\Documents\scripts\ManualTestCompanion\tabChamber.au3
+buffer.16.position=1
+buffer.16.scroll=0
+
+buffer.17.path=C:\Users\jabelx\OneDrive - Intel Corporation\Documents\scripts\ManualTestCompanion\tabDCpowerSupply.au3
+buffer.17.position=1
+buffer.17.scroll=0
+
+buffer.18.path=C:\Users\jabelx\OneDrive - Intel Corporation\Documents\scripts\ManualTestCompanion\tabFrequencyCounter.au3
+buffer.18.position=1
+buffer.18.scroll=0
+
+buffer.19.path=C:\Users\jabelx\OneDrive - Intel Corporation\Documents\scripts\ManualTestCompanion\tabOscope.au3
+buffer.19.position=1
+buffer.19.scroll=0
+
+buffer.20.path=C:\Users\jabelx\OneDrive - Intel Corporation\Documents\scripts\ManualTestCompanion\tabOscopeFM.au3
+buffer.20.position=1
+buffer.20.scroll=0

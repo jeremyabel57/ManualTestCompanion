@@ -1,0 +1,2 @@
+Data Fall Time (tfSDA)
+Falling edge of SDA, measured from 70% to 30%.

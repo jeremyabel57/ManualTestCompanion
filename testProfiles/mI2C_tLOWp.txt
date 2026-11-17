@@ -1,0 +1,3 @@
+Clock Low Time (tLOW)
+Time from SCL falling edge reaching 30% to SCL rising edge reaching 30%.
+Avoid Clock Stretching events (low times that may be noticably longer than other low times). 

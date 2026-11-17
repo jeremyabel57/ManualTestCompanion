@@ -1,0 +1,3 @@
+Data Hold Time (tHD;DAT)
+Time from SCL falling edge reaching 30% to SDA transition (either rising to 30% or falling to 70%).
+Do not measure from the SCL falling edged immediately after a Start Condition (SDA fall while SCL high).

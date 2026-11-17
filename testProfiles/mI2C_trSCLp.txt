@@ -1,0 +1,2 @@
+Clock Rise Time (trSCL)
+Rising edge of SCL, measured from 30% to 70%.
