@@ -654,39 +654,39 @@ Func ConfigReadAll()
 	;ConsoleWrite("scTab_ConfigRead" & @CRLF)
 	scTab_ConfigRead()
 	$progressI += $progressStep
-	ProgressSet(Int($progressI), "Oscilloscope ini file")
+	ProgressSet(Int($progressI), "Oscilloscope config")
 
 	;ConsoleWrite("dcTab_ConfigRead" & @CRLF)
 	dcTab_ConfigRead()
 	$progressI += $progressStep
-	ProgressSet(Int($progressI), "DC Power Supply ini file")
+	ProgressSet(Int($progressI), "DC Power Supply config")
 
 	;ConsoleWrite("tcTab_ConfigRead" & @CRLF)
 	tcTab_ConfigRead()
 	$progressI += $progressStep
-	ProgressSet(Int($progressI), "Thermal Chamber ini file")
+	ProgressSet(Int($progressI), "Thermal Chamber config")
 
 	;ConsoleWrite("fcTab_ConfigRead" & @CRLF)
 	fcTab_ConfigRead()
 	$progressI += $progressStep
-	ProgressSet(Int($progressI), "Frequency Counter ini file")
+	ProgressSet(Int($progressI), "Frequency Counter config")
 
 	;ConsoleWrite("dgTab_ConfigRead" & @CRLF)
 	dgTab_ConfigRead()
 	$progressI += $progressStep
-	ProgressSet(Int($progressI), "Diagnostic ini file")
+	ProgressSet(Int($progressI), "Diagnostic config")
 
 	;ConsoleWrite("__viScanDistribute" & @CRLF)
 	__viScanDistribute()
 	;ConsoleWrite("tpTab_ConfigRead" & @CRLF)
 	tpTab_ConfigRead()
 	$progressI += $progressStep
-	ProgressSet(Int($progressI), "Measurements ini file")
+	ProgressSet(Int($progressI), "Measurements config")
 
 	;ConsoleWrite("cb_ConfigRead" & @CRLF)
 	cb_ConfigRead()
 	$progressI += $progressStep
-	ProgressSet(Int($progressI), "Control Bar ini file")
+	ProgressSet(Int($progressI), "Control Bar config")
 
 EndFunc   ;==>ConfigReadAll
 Func ConfigRead()

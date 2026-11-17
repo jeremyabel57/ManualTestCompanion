@@ -306,6 +306,10 @@ Func tpTab_GuiCreate($iTabIdx, $oCanvas, $hCanvas)
 	$oMeas.Item('sTP') = $g_sTestProfile                                                                        ; (string) test profile name (I2C, SPI, Flash, SMBUS, Clock, ...)
 
 	$oCanvas.Item('oMeas') = $oMeas
+
+	;tpTab_GuiInfoWinCreate($oCanvas, 0)
+
+
 	Local $a[] = [_Max($x9 + $w3, $x1), $y2]
 	;__ConsolePrintVars("tabMeas GuiCreate, ", "a", $a)
 	Return $a
@@ -345,7 +349,7 @@ Func tpTab_GuiInfoWinCreateCB($oCanvas, $hCanvas)
 
 	$oCanvas.Item('cPic') = $cPic
 	$oCanvas.Item('cTxt') = $cTxt
-	$oCanvas.Item('iPic') = 0       ; index of cPic within aCanvasZoom array
+	$oCanvas.Item('iPic') = 1                                                   ; index of cPic within aCanvasZoom array
 
 	If $oCanvas.Exists('bZoomNeedCataloged') Then $oCanvas.Remove('bZoomNeedCataloged')
 	Local $n = 2                                                                ; 2 controls in this window
@@ -460,18 +464,18 @@ Func tpTab_Loop()
 				$iStep = 2
 			EndIf
 		EndIf
+
 		tpTab_SetMeasI($oMeas, $iSym, $iStep, $iBus, False)             ; update gui
-		If $iStep = 1 Then                                              ; if checkbox checked for technician to review scope measurement then
-			;??? enable these lines later and debug
+		If $iStep <= 1 Then                                             ; if checkbox checked for technician to review scope measurement then
 			Local $hInfoWin = tpTab_hInfoWin($oMeas)
-			If $hInfoWin Then GUISetState($GUI_SHOW, $hInfoWin)         ;   timing diagram and highlighted markers for how to do the measurement
-			__ConsolePrintVars("tpTab_Loop showInfoWin, ", "hInfoWin", $hInfoWin)
+			If $hInfoWin Then GUISetState(@SW_SHOW, $hInfoWin)          ;   timing diagram and highlighted markers for how to do the measurement
+			;__ConsolePrintVars("tpTab_Loop showInfoWin, ", "hInfoWin", $hInfoWin)
 		EndIf                                                           ; end if
 	Else
 		tpTab_PlaySet($oMeas, False)                                    ; we have reached then end, set play mode to stop
 		Local $hInfoWin = tpTab_hInfoWin($oMeas)
-		If $hInfoWin Then GUISetState($GUI_HIDE, $hInfoWin)             ;   timing diagram and highlighted markers for how to do the measurement
-		__ConsolePrintVars("tpTab_Loop hideInfoWin, ", "hInfoWin", $hInfoWin)
+		If $hInfoWin Then GUISetState(@SW_HIDE, $hInfoWin)              ;   timing diagram and highlighted markers for how to do the measurement
+		;__ConsolePrintVars("tpTab_Loop hideInfoWin, ", "hInfoWin", $hInfoWin)
 	EndIf
 EndFunc   ;==>tpTab_Loop
 

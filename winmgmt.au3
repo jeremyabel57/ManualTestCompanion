@@ -201,7 +201,8 @@ EndFunc   ;==>TabCanvasCreate
 Func FreeCanvasCreate($sName, $fCanvasGuiCreate = '', $iType = $CANVASZOOMTYPE_FREE, $iW = $g_iViewportW, $iH = $g_iViewportH)
 	If $iType = "" Then $iType = $CANVASZOOMTYPE_FREE
 
-	Local $hViewport = __Canvas_ViewportCreate($g_hMainGui, $iW, $iH, -1, -1, -1, $sName)   ; create separate window as a viewport
+	Local $hViewport = __Canvas_ViewportCreate($g_hMainGui, $iW, $iH, -1, -1, _             ; create separate window as a viewport
+			BitOR($WS_MINIMIZEBOX, $WS_MAXIMIZEBOX, $WS_CAPTION, $WS_POPUP, $WS_SYSMENU, $WS_SIZEBOX), $sName)
 	Local $oCanvas = ''
 	__Canvas_Create($oCanvas, $iW, $iH, $iType)                                             ; create the canvas
 	$oCanvas.Item('hWnd') = HWnd($hViewport)
@@ -382,7 +383,7 @@ Func __Canvas_OnTabChange($iActiveTab)
 			_WinAPI_SetFocus($hCanvas)                          ; Shift system focus down to the child window container
 			;ConsoleWrite("__Canvas_OnTabChange: ControlSend hCanvas {TAB}" & @CRLF)
 			ControlSend($hCanvas, "", "", "{TAB}")              ; Emulate a tab press inside the canvas context to engage its first control
-			Send("{CTRLUP}{SHIFTUP}{ALTUP}{LWINUP}")    		; reset any key modifiers getting stuck down - just in case
+			Send("{CTRLUP}{SHIFTUP}{ALTUP}{LWINUP}")            ; reset any key modifiers getting stuck down - just in case
 		EndIf
 
 	EndIf
