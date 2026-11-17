@@ -915,7 +915,7 @@ EndFunc   ;==>__viClassifyList
 ;			[1] = response string from VISA *IDN? request
 Func __viScanID($ipAddr)
 	Local $aR[2]
-	$aR[1] = __viGetID($ipAddr, 1100)
+	$aR[1] = __viGetIDscan($ipAddr, 1100)
 	$aR[0] = $ipAddr.Item('sAddr')
 	Return $aR
 EndFunc   ;==>__viScanID

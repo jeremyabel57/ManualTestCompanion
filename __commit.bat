@@ -8,6 +8,7 @@ git status
 echo.
 set /p c=Commit Note:^ 
 echo.
+git add .
 git commit -a -m "%c%"
 echo.
 git push

@@ -3121,6 +3121,7 @@ Func __viGetID(ByRef $oDev, $iTimeoutMS = 1000) ; , $retry = 1)
 	If Not __IsDictionary($oDev) Then
 		If Not IsString($oDev) Then Return ""
 		If $oDev = "" Then Return ""
+		__viResolveInstrument($oDev)
 	EndIf
 	__viGetIDbg($oDev, $iTimeoutMS)
 	__viFlush($oDev, $iTimeoutMS)
@@ -3129,7 +3130,8 @@ Func __viGetID(ByRef $oDev, $iTimeoutMS = 1000) ; , $retry = 1)
 	If $oDev.Exists('viIdn') Then Return $oDev.Item('viIdn')
 	Return ""
 EndFunc   ;==>__viGetID
-Func __viGetIDold(ByRef $oDev, $iTimeoutMS = 1000, $retry = 1)
+
+Func __viGetIDscan(ByRef $oDev, $iTimeoutMS = 1000, $retry = 1)
 	__viFlushInputBuffer($oDev)                             ; when initially connecting we can flush the devices input traffic from any previous interactions
 	Local $sRet = __viReqBl($oDev, $VI_IDN, True, $iTimeoutMS)
 	If Not @error And $sRet <> "" Then Return $sRet
@@ -3142,6 +3144,18 @@ Func __viGetIDold(ByRef $oDev, $iTimeoutMS = 1000, $retry = 1)
 	Return ""
 EndFunc   ;==>__viGetIDold
 
+Func __viGetIDold(ByRef $oDev, $iTimeoutMS = 1000, $retry = 1)
+	__viFlushInputBuffer($oDev)                             ; when initially connecting we can flush the devices input traffic from any previous interactions
+	Local $sRet = __viReqBl($oDev, $VI_IDN, True, $iTimeoutMS)
+	If Not @error And $sRet <> "" Then Return $sRet
+	If $retry = 0 Then Return SetError(@error, 0, $sRet)
+	__viToggleMode($oDev)                                   ; switch between VXI-11 and raw socket modes
+	$sRet = __viGetIDold($oDev, $iTimeoutMS, 0)             ; try again
+	If Not @error And $sRet <> "" Then Return $sRet
+	$sRet = __F4TgetID($oDev, $iTimeoutMS)                  ; try modbus
+	If Not @error Then Return $sRet
+	Return ""
+EndFunc   ;==>__viGetIDold
 
 
 ;			Identify the visa device
