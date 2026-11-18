@@ -290,6 +290,19 @@ Func FreeCanvasClose()                                                          
 EndFunc   ;==>FreeCanvasClose
 
 
+Func FreeCanvasShow($oCanvas, $bVisible = True)
+	If Not __IsDictionary($oCanvas) Then Return
+	If Not $oCanvas.Exists('hViewport') Then Return
+	If Not $oCanvas.Exists('hCanvas') Then Return
+	Local $hViewport = HWnd($oCanvas.Item('hViewport'))
+	Local $hCanvas = HWnd($oCanvas.Item('hCanvas'))
+	GUISetState(($bVisible ? @SW_SHOW : @SW_HIDE), $hViewport)
+	GUISetState(($bVisible ? @SW_SHOW : @SW_HIDE), $hCanvas)
+EndFunc   ;==>FreeCanvasShow
+Func FreeCanvasHide($oCanvas)
+	FreeCanvasShow($oCanvas, False)
+EndFunc   ;==>FreeCanvasHide
+
 
 ; ---------------------------------------------------------------------------
 ; ---------------------------------------------------------------------------
@@ -715,6 +728,7 @@ Func __Canvas_WM_MOUSEWHEEL($hWnd, $iMsg, $wParam, $lParam)
 			__Canvas_SetZoom($g_oMainCanvas, $fRet, True, 'aCBCtrls')   ;     set control bar control zoom
 			__Canvas_SetZoom($g_oCanvas, $fRet, True, 'aTabCtrls')      ;     set zoom of controls that are part of the canvas, but located in the tab
 		EndIf                                                           ;   end if
+		__Canvas_WM_SIZE($hWnd, 0, 0, 0)                                ;   resettle the window size
 		__WinUnlockRepaint()
 	Else                                                                ; else
 		If __Canvas_IsWebView($g_oCanvas) Then Return $GUI_RUNDEFMSG    ;   if webview then pass mousewheel events along

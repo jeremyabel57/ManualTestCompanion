@@ -5,38 +5,14 @@
 
 	when setting up the variables for the measurement viscript, add one that pulls the chamber setpoint so it could be used for text on the screenshot
 
-	- diag tab needs work
-	  . it is displaying items that are part of the if or else body that are being skipped, maybe show those as being skipped in the output
-	  . stack display is not being emptied properly to follow oStack
-	  . queue display is not being emptied fully when items are pulled
-	  . when showing executed output items, for conditional statements show a 'c' or something to show it is a conditioinal statement, and possibly indicators if it is in skip mode to indicate
-	    the statement it not being evaluated/executed.
 
 
 
-	    __viGetID
-		  - see viGetIDbg.txt script for ideas
-		  - try ping first?  to verify ip address?
-		  - first try a modbus command to read a register, if successful then do complete modbus IDN sequence to get string and set sAddr to raw mode or use a different string to indicate modbus only mode "modbus:ipaddr:502"
-		  - next try visa vxi-11 protocol *IDN? string, if successful then set sAddr to vxi-11 string
-		  - finally try raw mode, if successful then set sAddr to "raw:..."
-		  - if nothing worked, then leave sAddr at raw mode or empty string to signal no communications and if any new items added to queue to maybe try communications again
 
-		debug __viGetIDbg
-		  solved the issue with the excess traffic - that was a receive binary request when in raw socket mode.  this is now fixed
-		  this routine still has issues, now everytime it is run it toggles the mode (vxi/raw) but does not appear to detect that the first mode was working
+		/ when closing conditional script statement, there appears to be a pause - guessing a timeout as if it thinks there is a command running
+		  / for this, check the end of LoopExec to see what it does with a sCmd or sReq string that evaluates to a blank string.  If waitReply is true this might account for the pause
 
-
-		debug tab pushes stuff on stack, but the last item on the stack does not appear to drop.
-		  / add a debug button that dumps oDev into the output window any time you want
-		  / add to the sPrintVar routine to detect if it is a stack, queue, or pQueue and print them as just a list of items (without head and tail pointers)
-
-		when closing conditional script statement, there appears to be a pause - guessing a timeout as if it thinks there is a command running
-		  for this, check the end of LoopExec to see what it does with a sCmd or sReq string that evaluates to a blank string.  If waitReply is true this might account for the pause
-
-		add checkbox inbetween set and capture - if checked then pause for technician to verify measurement
-		when building tab, add array of elements to save and restore states/data into ini file.  the list will be just the ctrl handles and the save/restore function will
-		  identify the type of control and save/restore using the index number in the array as the key
+		/ add checkbox inbetween set and capture - if checked then pause for technician to verify measurement
 
 
 
@@ -212,8 +188,40 @@
 
 
 
+----- Finished -------------
+
+	- diag tab needs work
+	  . it is displaying items that are part of the if or else body that are being skipped, maybe show those as being skipped in the output
+	  . stack display is not being emptied properly to follow oStack
+	  . queue display is not being emptied fully when items are pulled
+	  . when showing executed output items, for conditional statements show a 'c' or something to show it is a conditioinal statement, and possibly indicators if it is in skip mode to indicate
+	    the statement it not being evaluated/executed.
 
 
+
+		__viGetID
+		  - see viGetIDbg.txt script for ideas
+		  - try ping first?  to verify ip address?
+		  - first try a modbus command to read a register, if successful then do complete modbus IDN sequence to get string and set sAddr to raw mode or use a different string to indicate modbus only mode "modbus:ipaddr:502"
+		  - next try visa vxi-11 protocol *IDN? string, if successful then set sAddr to vxi-11 string
+		  - finally try raw mode, if successful then set sAddr to "raw:..."
+		  - if nothing worked, then leave sAddr at raw mode or empty string to signal no communications and if any new items added to queue to maybe try communications again
+;   look into viGetID
+;     first try modbus.  check code for low timeout if connection fails due to no response from ip address
+;     next try VXI-11 to get IDN.
+;     next try raw socket
+;     all done with visa script to run in background
+;     add sAddr prefix "modbus:" for modbus only devices
+;
+
+		debug __viGetIDbg
+		  solved the issue with the excess traffic - that was a receive binary request when in raw socket mode.  this is now fixed
+		  this routine still has issues, now everytime it is run it toggles the mode (vxi/raw) but does not appear to detect that the first mode was working
+
+
+		debug tab pushes stuff on stack, but the last item on the stack does not appear to drop.
+		  / add a debug button that dumps oDev into the output window any time you want
+		  / add to the sPrintVar routine to detect if it is a stack, queue, or pQueue and print them as just a list of items (without head and tail pointers)
 
 
 
@@ -495,7 +503,7 @@ Func CreateMainGUI()
 	;ConsoleWrite("CreateMainGUI: cb" & @CRLF)
 	CreateControlBar(0, $V_HEIGHT, $V_WIDTH, $iCBH)                                                         ; add aux control bar to bottom
 	$progressI += $progressStep
-	ProgressSet(Int($progressI), "Control/Status Bar")
+	ProgressSet(Int($progressI), "Status Bar")
 
 	GUISetOnEvent($GUI_EVENT_CLOSE, "CloseApp", $g_hMainGui)                                                ; Register the close button action for the main layout frame
 

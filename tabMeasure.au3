@@ -6,13 +6,6 @@
 
 ; todo:
 ;   validate measurement picture and caption window infowin
-;   look into viGetID
-;     first try modbus.  check code for low timeout if connection fails due to no response from ip address
-;     next try VXI-11 to get IDN.
-;     next try raw socket
-;     all done with visa script to run in background
-;     add sAddr prefix "modbus:" for modbus only devices
-;
 
 
 
@@ -408,13 +401,22 @@ EndFunc   ;==>tpTab_GuiLoadInfoWin
 
 
 Func tpTab_hInfoWin($oMeas)                     ; return handle of measurement InfoWin from oMeas.  if not found then return 0
-	If Not $oMeas.Exists('oInfoWin') Then Return 0
-	Local $oInfoWin = $oMeas.Item('oInfoWin')
+	Local $oInfoWin = tpTab_oInfoWin($oMeas)
+	;If Not $oMeas.Exists('oInfoWin') Then Return 0
+	;Local $oInfoWin = $oMeas.Item('oInfoWin')
 	If Not __IsDictionary($oInfoWin) Then Return 0
 	If Not $oInfoWin.Exists('hViewport') Then Return 0
 	Return $oInfoWin.Item('hViewport')
 EndFunc   ;==>tpTab_hInfoWin
 
+
+
+Func tpTab_oInfoWin($oMeas)                     ; return handle of measurement InfoWin from oMeas.  if not found then return 0
+	If Not $oMeas.Exists('oInfoWin') Then Return 0
+	Local $oInfoWin = $oMeas.Item('oInfoWin')
+	If Not __IsDictionary($oInfoWin) Then Return 0
+	return $oInfoWin
+EndFunc   ;==>tpTab_hInfoWin
 
 
 
@@ -467,14 +469,16 @@ Func tpTab_Loop()
 
 		tpTab_SetMeasI($oMeas, $iSym, $iStep, $iBus, False)             ; update gui
 		If $iStep <= 1 Then                                             ; if checkbox checked for technician to review scope measurement then
-			Local $hInfoWin = tpTab_hInfoWin($oMeas)
-			If $hInfoWin Then GUISetState(@SW_SHOW, $hInfoWin)          ;   timing diagram and highlighted markers for how to do the measurement
+			FreeCanvasShow($oMeas.Item('oInfoWin'))
+			;Local $hInfoWin = tpTab_hInfoWin($oMeas)
+			;If $hInfoWin Then GUISetState(@SW_SHOW, $hInfoWin)          ;   timing diagram and highlighted markers for how to do the measurement
 			;__ConsolePrintVars("tpTab_Loop showInfoWin, ", "hInfoWin", $hInfoWin)
 		EndIf                                                           ; end if
 	Else
 		tpTab_PlaySet($oMeas, False)                                    ; we have reached then end, set play mode to stop
-		Local $hInfoWin = tpTab_hInfoWin($oMeas)
-		If $hInfoWin Then GUISetState(@SW_HIDE, $hInfoWin)              ;   timing diagram and highlighted markers for how to do the measurement
+		FreeCanvasHide($oMeas.Item('oInfoWin'))
+		;Local $hInfoWin = tpTab_hInfoWin($oMeas)
+		;If $hInfoWin Then GUISetState(@SW_HIDE, $hInfoWin)              ;   timing diagram and highlighted markers for how to do the measurement
 		;__ConsolePrintVars("tpTab_Loop hideInfoWin, ", "hInfoWin", $hInfoWin)
 	EndIf
 EndFunc   ;==>tpTab_Loop
@@ -835,8 +839,9 @@ Func tpTab_SetMeasI($oMeas, $iSym = -1, $iStep = -1, $iBus = -1, $bClear = False
 	; update popout info window diagram and text to match the newly selected measurement symbol
 	If $iStep = 0 Then
 		tpTab_GuiLoadInfoWin($oMeas.Item('oInfoWin'), $g_profileFolder & "m" & $oMeas.Item('sTP') & "_" & $aMeas[$iSym][0] & "p")
-		Local $hInfoWin = tpTab_hInfoWin($oMeas)
-		If $hInfoWin Then GUISetState($GUI_SHOW, $hInfoWin)             ;   timing diagram and highlighted markers for how to do the measurement
+		FreeCanvasShow($oMeas.Item('oInfoWin'))
+		;Local $hInfoWin = tpTab_hInfoWin($oMeas)
+		;If $hInfoWin Then GUISetState($GUI_SHOW, $hInfoWin)             ;   timing diagram and highlighted markers for how to do the measurement
 	EndIf
 
 EndFunc   ;==>tpTab_SetMeasI

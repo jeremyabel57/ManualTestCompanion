@@ -3117,7 +3117,7 @@ EndFunc   ;==>__viEnd
 ; task:		request ID from device, if it fails, then switch to other comm protocol and try again
 ; in:		$oDev = the IP address of the instrument in the form [raw:]IP[:port]
 ; out:		response string from VISA *IDN? request
-Func __viGetID(ByRef $oDev, $iTimeoutMS = 1000) ; , $retry = 1)
+Func __viGetID(ByRef $oDev, $iTimeoutMS = 1000)
 	If Not __IsDictionary($oDev) Then
 		If Not IsString($oDev) Then Return ""
 		If $oDev = "" Then Return ""
@@ -3131,18 +3131,38 @@ Func __viGetID(ByRef $oDev, $iTimeoutMS = 1000) ; , $retry = 1)
 	Return ""
 EndFunc   ;==>__viGetID
 
-Func __viGetIDscan(ByRef $oDev, $iTimeoutMS = 1000, $retry = 1)
-	__viFlushInputBuffer($oDev)                             ; when initially connecting we can flush the devices input traffic from any previous interactions
-	Local $sRet = __viReqBl($oDev, $VI_IDN, True, $iTimeoutMS)
-	If Not @error And $sRet <> "" Then Return $sRet
-	If $retry = 0 Then Return SetError(@error, 0, $sRet)
-	__viToggleMode($oDev)                                   ; switch between VXI-11 and raw socket modes
-	$sRet = __viGetIDold($oDev, $iTimeoutMS, 0)             ; try again
-	If Not @error And $sRet <> "" Then Return $sRet
-	$sRet = __F4TgetID($oDev, $iTimeoutMS)                  ; try modbus
-	If Not @error Then Return $sRet
+Func __viGetIDscan(ByRef $oDev, $iTimeoutMS = 1000)
+	__viFlushInputBuffer($oDev)                             	; when initially connecting we can flush the devices input traffic from any previous interactions
+	If __mbReadBl($oDev, "1i", 0) <> "" Then    				; if we have a reponse to a simple modbustcp request then
+		$sRet = __F4TgetID($oDev, $iTimeoutMS)                  ;   try modbus to read full ID
+		If Not @error Then Return $sRet                         ;   if success then return result
+	EndIf   													; end if
+	Local $sRet = __viReqBl($oDev, $VI_IDN, True, $iTimeoutMS)  ; try initial config VXI-11 or raw
+	If Not @error And $sRet <> "" Then Return $sRet             ; if success then return result
+	__viToggleMode($oDev)                                       ; switch between VXI-11 and raw socket modes
+	Local $sRet = __viReqBl($oDev, $VI_IDN, True, $iTimeoutMS)  ; try initial alternate config
+	If Not @error And $sRet <> "" Then Return $sRet             ; if success then return result
 	Return ""
-EndFunc   ;==>__viGetIDold
+	#cs
+		If Not __IsDictionary($oDev) Then
+			If Not IsString($oDev) Then Return ""
+			If $oDev = "" Then Return ""
+			__viResolveInstrument($oDev)
+		EndIf
+		__viFlushInputBuffer($oDev)                             ; when initially connecting we can flush the devices input traffic from any previous interactions
+		__viGetIDbg($oDev, $iTimeoutMS)
+		While Not __viIsIdle($oDev)					           ; wait for command queue to empty
+			__viLoop()
+			Sleep(1)
+		WEnd
+		Local $t = __viFlush($oDev, 10000)
+		msgbox(0,"_viGetIDscan",__sPrintVar($oDev.Item('viIdn'), ", ", "viIdn") & @CRLF & "t=" & $t & @CRLF & "iTimeout=" & $iTimeoutMS)
+		;__ConsolePrintVars("__viGetID, ", "oDev", $oDev)
+		If Not __IsDictionary($oDev) Then Return ""
+		If $oDev.Exists('viIdn') Then Return $oDev.Item('viIdn')
+		Return ""
+	#ce
+EndFunc   ;==>__viGetIDscan
 
 Func __viGetIDold(ByRef $oDev, $iTimeoutMS = 1000, $retry = 1)
 	__viFlushInputBuffer($oDev)                             ; when initially connecting we can flush the devices input traffic from any previous interactions

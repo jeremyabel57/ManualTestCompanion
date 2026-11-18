@@ -331,12 +331,13 @@ EndFunc   ;==>__viScanSubnetRunFirst
 
 
 
-Func __viScanSetProgress($iProgress)
+Func __viScanSetProgress($iProgress, $sMsg = "")
 	If $__viSD_hProgress <> 0 Then
 		GUICtrlSetData($__viSD_hProgress, $iProgress)
 	Else
 		If $iProgress <= 0 Then __WinTitleNote("")
-		If 0 < $iProgress And $iProgress < 100 Then __WinTitleNote("Subnet Search " & $iProgress & "%", 10000)
+		If $sMsg <> "" Then $sMsg = ", " & $sMsg
+		If 0 < $iProgress And $iProgress < 100 Then __WinTitleNote("Subnet Search" & $sMsg & " " & $iProgress & "%", 15000)
 		If 100 <= $iProgress Then __WinTitleNote("Subnet Search Complete", 3000)
 	EndIf
 EndFunc   ;==>__viScanSetProgress
@@ -369,7 +370,7 @@ Func __viScanSubnet($sSubnet = "192.168.0.0", $cIpAddr = 0, $sFilter = '')
 EndFunc   ;==>__viScanSubnet
 
 Func __viScanSubnetFg($sSubnet = "192.168.0.0", $cIpAddr = 0, $sFilter = '')
-	__viScanSetProgress(5)
+	;__viScanSetProgress(5)
 	Local $aIpList = __PingScan($sSubnet)               ; scan network for active IP addresses
 	__viScanMergeIPlist($aIpList, $g_aVisaDevices)      ; merge previous scan with this one
 	$g_aVisaDevices = __viScanList($aIpList)            ; query visa *IDN? to see which IP addresses are VISA instruments
@@ -456,7 +457,7 @@ EndFunc   ;==>__viLoopScan
 Func __PingScanBgBegin()
 	Dim $g_aViScanPIDs[255]
 	$g_sViScanSubnet = StringRegExpReplace($g_sViScanSubnet, "\d+$", "")    ; remove last number, but keep the dot
-	__viScanSetProgress(5)
+	__viScanSetProgress(5, "launch ping")
 	$g_iViScanStage += 1
 	$g_iViScanStageI = 0
 	$g_iViScanStageN = 32
@@ -471,7 +472,7 @@ Func __PingScanBgLaunch()
 		; Run a fast, single-echo ping (-n 1) with a 750ms timeout (-w 750).
 		; We ask cmd to echo "ONLINE" only if the ping succeeds.
 		$g_aViScanPIDs[$i] = Run(@ComSpec & ' /c ping -n 1 -w 2000 ' & $sIP & ' | findstr "TTL=" && echo ONLINE', @TempDir, @SW_HIDE, $STDOUT_CHILD)
-		If Mod($i, 10) = 0 Then __viScanSetProgress(Int($i / 254 * 20) + 5)
+		If Mod($i, 10) = 0 Then __viScanSetProgress(Int($i / 254 * 20) + 5, "launch ping")
 		Sleep(1)
 	Next
 	$g_iViScanStageI += 1
@@ -481,7 +482,7 @@ EndFunc   ;==>__PingScanBgLaunch
 
 
 Func __PingScanBgGatherBegin()
-	__viScanSetProgress(25)
+	__viScanSetProgress(25, "harvest ping")
 	Local $i
 	$g_iViScanI = 0
 	$g_iViScanN = 0
@@ -513,7 +514,7 @@ Func __PingScanBgGather()
 		$g_aViScanPIDs[$i] = 0                                              ;   mark out the PID in the array so we don't process this again
 		$g_iViScanI += 1                                                    ;   increment progress counter
 		If Mod($g_iViScanI, 10) = 0 Then _                                  ;   update the progress bar
-				__viScanSetProgress(Int($g_iViScanI / $g_iViScanN * 25) + 25)
+				__viScanSetProgress(Int($g_iViScanI / $g_iViScanN * 25) + 25, "harvest ping")
 		If Not StringInStr($sOutput, "ONLINE") Then ContinueLoop            ;
 		Local $nC = UBound($g_aVisaDevices, 2)                              ;   If the window text output includes "ONLINE" keyword, it's alive!
 		Local $iV, $nV = UBound($g_aVisaDevices, 1) - 1                     ;
@@ -529,7 +530,7 @@ Func __PingScanBgGather()
 	If $g_iViScanStageI >= $g_iViScanStageN Then
 		$g_iViScanStageI = 0
 		If $g_iViScanI >= $g_iViScanN Then                                  ;   if all background processes are done then
-			__viScanSetProgress(50)                                         ;     set progress indicator to 50%
+			__viScanSetProgress(50, "harvest ping")                         ;     set progress indicator to 50%
 			$g_iViScanStage += 1                                            ;     move to next scan stage
 		EndIf
 	EndIf
@@ -564,7 +565,7 @@ Func __VisaScanBgLaunch()
 		$g_aViScanPIDs[$i] = Run($s, @TempDir, @SW_HIDE, $STDOUT_CHILD)
 		;__ConsolePrintVars("__VisaScanBgLaunch, ", "cmd", $s)
 	Next
-	__viScanSetProgress(50)                                                 ; update progress bar
+	__viScanSetProgress(50, "launch ID")                                    ; update progress bar
 	$g_iViScanStage += 1
 	;__ConsolePrintVars("__VisaScanBgLaunch, ", "stage", $g_iViScanStage, @CRLF & "aDevs", $g_aVisaDevices)
 	$g_iViScanStageI = 50                                                   ; prep for Prog1
@@ -578,13 +579,13 @@ Func __VisaScanBgProg1()
 	If TimerDiff($g_iViScanStageM) < $g_iViScanN Then Return
 	$g_iViScanI += $g_iViScanN
 	$g_iViScanStageI += 1
-	__viScanSetProgress($g_iViScanStageI)
+	__viScanSetProgress($g_iViScanStageI, "running ID")
 	If $g_iViScanStageI >= $g_iViScanStageN Then $g_iViScanStage += 1
 EndFunc   ;==>__VisaScanBgProg1
 
 
 Func __VisaScanBgGatherBegin()
-	__viScanSetProgress(75)                                                 ; update progress bar
+	__viScanSetProgress(75, "running ID")                                   ; update progress bar
 	Local $i, $n = UBound($g_aVisaDevices) - 1
 	$g_iViScanI = 0
 	$g_iViScanN = 0
@@ -605,7 +606,7 @@ Func __VisaScanBgGather()
 		If @error Then $sOut = ""
 		$g_aViScanPIDs[$i] = 0
 		$g_iViScanI += 1
-		__viScanSetProgress(75 + Int(($g_iViScanI / $g_iViScanN) * 25))     ; update progress bar
+		__viScanSetProgress(75 + Int(($g_iViScanI / $g_iViScanN) * 25), "harvest ID")    ; update progress bar
 		If $sOut = "" Then ContinueLoop                                     ; parse output: [raw:]IP[:port] @CRLF IDN_string
 		If StringInStr($sOut, @LF) Then
 			$aLine = StringSplit($sOut, @LF, 1)
@@ -629,7 +630,7 @@ EndFunc   ;==>__VisaScanBgGather
 
 Func __VisaScanBgClassifyList()
 	;__ConsolePrintVars("__VisaScanBgClassifyList, ", "stage", $g_iViScanStage, @CRLF & "aDevs", $g_aVisaDevices)
-	__viScanSetProgress(100)                                                ; update progress bar
+	__viScanSetProgress(100, "complete")                                    ; update progress bar
 	$g_aViScanPIDs = ''
 	Local $i, $n = UBound($g_aVisaDevices) - 1
 	Local $j, $k = 0, $t
@@ -687,18 +688,18 @@ Func __PingScan($sSubnetBase = "192.168.0.0")
 	Local $iProgressStep2 = 50 - $iProgressStep1
 
 	$sSubnetBase = StringRegExpReplace($sSubnetBase, "\d+$", "")                                            ; remove last number, but keep the dot
-	__viScanSetProgress(5)
+	__viScanSetProgress(5, "launch ping")
 	For $i = 1 To 254                                                                                       ; 1. Launch 254 hidden, concurrent pings
 		Local $sIP = $sSubnetBase & $i
 		; Run a fast, single-echo ping (-n 1) with a 750ms timeout (-w 750).
 		; We ask cmd to echo "ONLINE" only if the ping succeeds.
 		$aPIDs[$i] = Run(@ComSpec & ' /c ping -n 1 -w 750 ' & $sIP & ' | findstr "TTL=" && echo ONLINE', @TempDir, @SW_HIDE, $STDOUT_CHILD)
 		LoopExec()
-		If Mod($i, 10) = 0 Then __viScanSetProgress(Int(($i / 254) * $iProgressStep1delta + $iProgressStep0))
+		If Mod($i, 10) = 0 Then __viScanSetProgress(Int(($i / 254) * $iProgressStep1delta + $iProgressStep0), "launch ping")
 		Sleep(50)
 	Next
 
-	__viScanSetProgress($iProgressStep1)
+	__viScanSetProgress($iProgressStep1, "harvest ping")
 	Local $iDoneN = 0, $iDoneCount = 0, $bDelta
 	For $i = 1 To 254
 		If $aPIDs[$i] <> 0 Then $iDoneN += 1
@@ -722,7 +723,7 @@ Func __PingScan($sSubnetBase = "192.168.0.0")
 			EndIf
 			If $bDelta Then
 				If Mod($iDoneCount, 10) = 0 Then _                  ; update the progress bar
-						__viScanSetProgress($iProgressStep1 + Int(($iDoneCount / $iDoneN) * $iProgressStep2))
+						__viScanSetProgress($iProgressStep1 + Int(($iDoneCount / $iDoneN) * $iProgressStep2), "harvest ping")
 			EndIf
 		Next
 		LoopExec()                                                  ; run main background loop
@@ -786,7 +787,7 @@ Func __viScanList($aIpList)
 	Next
 
 	For $j = 1 To $iRetries
-		__viScanSetProgress($iProgressStep1)                                            ; update progress
+		__viScanSetProgress($iProgressStep1, "launch ID")                               ; update progress
 		For $i = 0 To $iN                                                               ; 1. Spawn all worker processes simultaneously (Non-blocking Parallel Launch)
 			If $aDevs[$i][2] = "" Then                                                  ; if we do not have IDN yet, then spawn a process to ask for it
 				If @Compiled Then                                                       ; If compiled, call the current EXE directly with the argument
@@ -801,11 +802,11 @@ Func __viScanList($aIpList)
 			EndIf
 			LoopExec()
 			__viScanSetProgress($iProgressStep1 + _
-					Int(($i / $iCount) * $iProgressStep1delta))                         ; update the progress bar
+					Int(($i / $iCount) * $iProgressStep1delta), "launch ID")            ; update the progress bar
 			Sleep(10)                                                                   ; a short pause between deployments of the visa IDN requests
 		Next
 
-		__viScanSetProgress($iProgressStep2)                                            ; update progress bar
+		__viScanSetProgress($iProgressStep2, "running ID")                              ; update progress bar
 		Local $iProgressStep2delta2 = Int(240 / $iProgressStep2delta)
 		For $i = 1 To $iProgressStep2delta
 			__viScanSetProgress($iProgressStep2 + $i)
@@ -850,7 +851,7 @@ Func __viScanList($aIpList)
 				EndIf
 				If $bDelta Then _
 						__viScanSetProgress($iProgressStep3 + _
-						Int(($iDoneCount / $iDoneN) * $iProgressStep3delta))            ; update progress bar
+						Int(($iDoneCount / $iDoneN) * $iProgressStep3delta), "harvest ID") ; update progress bar
 			Next
 			LoopExec()
 			Sleep(50)
