@@ -2,6 +2,7 @@
 echo.
 echo.
 echo.
+call _bcompSync.bat
 move /y Backup\*.* ..\_backup
 ::move archive ..\_archive
 git status
