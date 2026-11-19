@@ -62,7 +62,7 @@ Func winmgmt_Init()                                                             
 	;$g_oGuiPics = ObjCreate("Scripting.Dictionary")
 	;$g_oTabExec = ObjCreate("Scripting.Dictionary")
 
-	_GUIRegisterMsg($WM_SIZE, "__Canvas_WM_SIZE")                   ; window resized
+	_GUIRegisterMsg($WM_SIZE, "__WM_SIZE")                          ; window resized
 	_GUIRegisterMsg($WM_VSCROLL, "__Canvas_WM_VSCROLL_HANDLER")     ; vertical scroll bar activity
 	_GUIRegisterMsg($WM_HSCROLL, "__Canvas_WM_HSCROLL_HANDLER")     ; horizontal scroll bar activity
 	_GUIRegisterMsg($WM_MOUSEWHEEL, "__Canvas_WM_MOUSEWHEEL")       ; mouse wheel activity
@@ -271,15 +271,16 @@ Func __Canvas_Viewport_Init()
 	$g_iViewportW = $aPageRect[2] - $aPageRect[0]
 	$g_iViewportH = $aPageRect[3] - $aPageRect[1]
 	;$g_hViewport = 0
-	$g_hViewportDef = GUICreate("Viewport", $g_iViewportW, $g_iViewportH, $g_iViewportX, $g_iViewportY, $WS_CHILD, -1, $g_hMainGui)        ; create viewport canvas
-	_GUIScrollBars_Init($g_hViewport)                           ; Initialize the custom Windows system scrollbar subsystem directly onto the viewport framework
+	$g_hViewportDef = GUICreate("Viewport", $g_iViewportW, $g_iViewportH, _ 					; create viewport canvas
+			$g_iViewportX, $g_iViewportY, BitOR($WS_CHILD, $WS_HSCROLL, $WS_VSCROLL), -1, $g_hMainGui)
+	_GUIScrollBars_Init($g_hViewportDef)                           								; Initialize the custom Windows system scrollbar subsystem directly onto the viewport framework
 	GUISwitch($g_hMainGui)
 	;__API_ControlSetOnTopVisible($g_hViewportDef, False)
 EndFunc   ;==>__Canvas_Viewport_Init
 
 
 Func __Canvas_ViewportCreate($hParent = $g_hMainGui, $iW = $g_iViewportW, $iH = $g_iViewportH, $iX = $g_iViewportX, $iY = $g_iViewportY, $style = $WS_CHILD, $sTitle = "Viewport")
-	Local $hViewport = GUICreate($sTitle, $iW, $iH, $iX, $iY, $style, -1, $hParent)             ; create viewport canvas
+	Local $hViewport = GUICreate($sTitle, $iW, $iH, $iX, $iY, BitOR($style, $WS_HSCROLL, $WS_VSCROLL), -1, $hParent)             ; create viewport canvas
 	_GUIScrollBars_Init($hViewport)                                                             ; Initialize the custom Windows system scrollbar subsystem directly onto the viewport framework
 	GUISwitch($g_hMainGui)
 	Return $hViewport
@@ -404,7 +405,7 @@ Func __Canvas_OnTabChange($iActiveTab)
 	EndIf
 
 	;ConsoleWrite("__Canvas_OnTabChange: WM_SIZE" & @CRLF)
-	__Canvas_WM_SIZE($g_hMainGui, 0, 0, 0)
+	__WM_SIZE($g_hMainGui, 0, 0, 0)
 	;_WinAPI_RedrawWindow($g_hMainGui, 0, 0, _
 	;		BitOR($RDW_UPDATENOW, $RDW_ALLCHILDREN))
 	;BitOR($RDW_INVALIDATE, $RDW_UPDATENOW, $RDW_ALLCHILDREN))
@@ -442,8 +443,8 @@ EndFunc   ;==>__API_ControlSetVisible
 ; tab viewport and canvas popout and popin functions
 #cs
 	TODO
-		• Message Loop Interception(__Canvas_WM_SIZE) : Your existing __Canvas_WM_SIZE handler expects $g_hViewport To track relative coordinates inside the main UI bounds.
-		When you breakout the viewport, you should temporally set a flag(E.g., $g_bIsDetached = True) so that __Canvas_WM_SIZE doesn't attempt to snap or scale the window positions
+		• Message Loop Interception(__WM_SIZE) : Your existing __WM_SIZE handler expects $g_hViewport To track relative coordinates inside the main UI bounds.
+		When you breakout the viewport, you should temporally set a flag(E.g., $g_bIsDetached = True) so that __WM_SIZE doesn't attempt to snap or scale the window positions
 		while it's floating freely on the desktop.
 		• Window Close Button : Adding $WS_SYSMENU gives the detached window a standard X close button. If a user clicks it, Windows will try To destroy your viewport control.
 			You should intercept $WM_CLOSE messages For that handle, Or subclass it, To make the X button trigger _Canvas_Viewport_PopIn() instead of deleting the window framework.
@@ -524,8 +525,13 @@ EndFunc   ;==>__Canvas_PopIn
 
 Global $g_cb_iH
 
-Func __Canvas_WM_SIZE($hWnd, $iMsg, $wParam, $lParam)
-	If $g_oFreeCanvas.Exists(String($hWnd)) Then Return __FreeCanvas_WM_SIZE($hWnd, $iMsg, $wParam, $lParam)
+Func __WM_SIZE($hWnd, $iMsg, $wParam, $lParam)
+	If $g_oFreeCanvas.Exists(String($hWnd)) Then
+		Local $oCanvas = $g_oFreeCanvas.Item(String($hWnd))                                                 ; validate window
+		If Not __IsDictionary($oCanvas) Then Return $GUI_RUNDEFMSG
+		Return __GenCanvas_WM_SIZE($hWnd, $iMsg, $wParam, $lParam, $oCanvas, False)
+	EndIf
+
 	If $hWnd <> $g_hMainGui Then Return $GUI_RUNDEFMSG
 	Return __GenCanvas_WM_SIZE($hWnd, $iMsg, $wParam, $lParam, $g_oCanvas, True)
 
@@ -595,7 +601,7 @@ Func __Canvas_WM_SIZE($hWnd, $iMsg, $wParam, $lParam)
 		Return 0
 		;Return $GUI_RUNDEFMSG
 	#ce
-EndFunc   ;==>__Canvas_WM_SIZE
+EndFunc   ;==>__WM_SIZE
 
 
 
@@ -616,27 +622,27 @@ Func __GenCanvas_WM_SIZE($hWnd, $iMsg, $wParam, $lParam, $oCanvas = $g_oCanvas, 
 	If Int($hViewport) = 0 Or Int($hCanvas) = 0 Then Return $GUI_RUNDEFMSG                                  ;
 
 	Local $iViewportW, $iViewportH, $iCanvasW, $iCanvasH                                                    ; get size for viewport and canvas
-	Local $iCanvasMinW = $oCanvas.Item('iMinW')
-	Local $iCanvasMinH = $oCanvas.Item('iMinH')
-	If $bTab Then
-		Local $aPageRect = _GUICtrlTab_GetDisplayRect($g_hTab)                                              ; Recalculate working viewport bounds inside the scaled tab components
-		$iViewportW = $aPageRect[2] - $aPageRect[0]                                                         ; This is the visible width of your view window
-		$iViewportH = $aPageRect[3] - $aPageRect[1]                                                         ; This is the visible height of your view window
-		$iCanvasW = $g_iTabW                                                                                ; width of the canvas being viewed
-		$iCanvasH = $g_iTabH                                                                                ; height of the canvas being viewed
-	Else
-		$iViewportW = $aSize[0]                                                                             ; width of viewport
-		$iViewportH = $aSize[1]                                                                             ; height of viewport
-		$aSize = WinGetClientSize($hCanvas)                                                                 ;
-		$iCanvasW = $aSize[0]                                                                               ; width of canvas being viewed
-		$iCanvasH = $aSize[1]                                                                               ; height of canvas being viewed
-	EndIf
+	If $bTab Then   																						; if this is a tab window then
+		Local $aPageRect = _GUICtrlTab_GetDisplayRect($g_hTab)                                              ;   Recalculate working viewport bounds inside the scaled tab components
+		$iViewportW = $aPageRect[2] - $aPageRect[0]                                                         ;   This is the visible width of your view window
+		$iViewportH = $aPageRect[3] - $aPageRect[1]                                                         ;   This is the visible height of your view window
+		$iCanvasW = $g_iTabW                                                                                ;   width of the canvas being viewed
+		$iCanvasH = $g_iTabH                                                                                ;   height of the canvas being viewed
+	Else    																								; else it is a free standing window
+		$iViewportW = $aSize[0]                                                                             ;   width of viewport
+		$iViewportH = $aSize[1]                                                                             ;   height of viewport
+		$aSize = WinGetClientSize($hCanvas)                                                                 ;   get current size of the canvas
+		$iCanvasW = $aSize[0]                                                                               ;   width of canvas being viewed
+		$iCanvasH = $aSize[1]                                                                               ;   height of canvas being viewed
+	EndIf   																								; end if
 
 	Local $iSX, $iSY
 	__Canvas_GetScrollPos($iSX, $iSY, $hViewport, $oCanvas, $iViewportW, $iViewportH, $iCanvasW, $iCanvasH) ; get current scroll bar offset position
 
 	Local $zType = $CANVASZOOMTYPE_FREE                                                                     ; zoomType:  if viewport smaller than canvas, then scrollbars control viewport of larger canvas
 	If __IsDictionary($oCanvas) Then $zType = $oCanvas.Item('zoomType')                                     ; zoomType MIN = if viewport larger than canvas then scale the canvas to match viewport.  otherwise leave canvas scale alone
+	Local $iCanvasMinW = $oCanvas.Item('iMinW') 															; for zoomType MIN, this is the minimum Width to shrink the canvas window
+	Local $iCanvasMinH = $oCanvas.Item('iMinH') 															; for zoomType MIN, this is the minimum Height to shrink the canvas window
 
 	Local $iSBW = _WinAPI_GetSystemMetrics($SM_CXVSCROLL)                                                   ; buffer for vertical scroll bar
 	Local $iSBH = _WinAPI_GetSystemMetrics($SM_CYHSCROLL)                                                   ; buffer for horizontal scroll bar
@@ -657,12 +663,12 @@ Func __GenCanvas_WM_SIZE($hWnd, $iMsg, $wParam, $lParam, $oCanvas = $g_oCanvas, 
 				BitOR($SWP_NOZORDER, $SWP_NOACTIVATE))                                                      ;   also resize canvas
 		$oCanvas.Item('iW') = $iCanvasW                                                                     ;   save new width
 		$oCanvas.Item('iH') = $iCanvasH                                                                     ;   save new height
-		If $bTab Then
+		If $bTab Then   																					;   if we are a tab then keep the globals up to date
 			$g_iTabW = $iCanvasW
 			$g_iTabH = $iCanvasH
 		EndIf
-		If $g_oCanvas.Exists('aWebView') Then                                                               ;   if this is a webview then resize webview bounds to match
-			Local $aWebView = $g_oCanvas.Item('aWebView')
+		If $oCanvas.Exists('aWebView') Then                                                               ;   if this is a webview then resize webview bounds to match
+			Local $aWebView = $oCanvas.Item('aWebView')
 			If IsArray($aWebView) Then _WebView2_SetBounds($aWebView, 0, 0, $iCanvasW, $iCanvasH)
 		EndIf
 	Else                                                                                                    ; else only adjust the canvas position withing the viewport
@@ -670,7 +676,7 @@ Func __GenCanvas_WM_SIZE($hWnd, $iMsg, $wParam, $lParam, $oCanvas = $g_oCanvas, 
 				BitOR($SWP_NOSIZE, $SWP_NOZORDER, $SWP_NOACTIVATE))                                         ;   SWP_NOSIZE (0x0001) preserves the canvas tracking width/height ($g_iTabW, $g_iTabH)
 	EndIf                                                                                                   ; end if
 
-	;__ConsolePrintVars("WM_SIZE, ", "iX", $g_iViewportX, "iY", $g_iViewportY, "h", $g_hViewport)
+	;__ConsolePrintVars("WM_SIZE, ", "iX", $iViewportX, "iY", $iViewportY, "h", $hViewport)
 	_WinAPI_SetWindowPos($hViewport, 0, 0, 0, _                                                             ; resize the viewport to match new window size
 			$iViewportW, $iViewportH, BitOR($SWP_NOMOVE, $SWP_NOREDRAW, $SWP_NOZORDER, $SWP_NOACTIVATE))    ; SWP_NOREDRAW (0x0008) = no repainting.  SWP_NOZORDER (0x0004) = don't change z order.  SWP_NOACTIVE (0x0010) = do not activate or change focus to this window pane
 	__API_UpdateScrollbarMetrics($hViewport, $SB_HORZ, $iMinW, $iMaxW, $iPW, Abs($iSX))                     ; update the horizontal scrollbar
@@ -680,21 +686,18 @@ Func __GenCanvas_WM_SIZE($hWnd, $iMsg, $wParam, $lParam, $oCanvas = $g_oCanvas, 
 	$oCanvas.Item('iSY') = $iSY                                                                             ;
 
 	If $bTab Then
+		;__ConsolePrintVars("__GenCanvas_WM_SIZE, ", "aCBCtrls", $g_oMainCanvas.Item('aCBCtrls'))
 		__Canvas_AdjZoom($g_oMainCanvas, 0, False, 'aCBCtrls')                                              ; reposition controls of the control bar
+		;__ConsolePrintVars("__GenCanvas_WM_SIZE, ", "aCBCtrls", $g_oMainCanvas.Item('aCBCtrls'))
 		__Canvas_AdjZoom($oCanvas, 0, False, 'aTabCtrls')                                                   ; reposition controls for the visible tab
 	EndIf
 	Return 0
 EndFunc   ;==>__GenCanvas_WM_SIZE
 
 
-Func __FreeCanvas_WM_SIZE($hWnd, $iMsg, $wParam, $lParam)                                                   ; respond to resize of window
-	Local $oCanvas = $g_oFreeCanvas.Item(String($hWnd))                                                     ; validate window
-	If Not __IsDictionary($oCanvas) Then Return $GUI_RUNDEFMSG
-	Return __GenCanvas_WM_SIZE($hWnd, $iMsg, $wParam, $lParam, $oCanvas, False)
-EndFunc   ;==>__FreeCanvas_WM_SIZE
-
 
 Func __Canvas_GetScrollPos(ByRef $iX, ByRef $iY, $hWnd = $g_hViewport, $oCanvas = $g_oCanvas, $iViewportW = $g_iViewportW, $iViewportH = $g_iViewportH, $iCanvasW = $g_iTabW, $iCanvasH = $g_iTabH)
+__ConsolePrintVars("__Canvas_GetScrollPos, ", "iX", $iX, "iY", $iY, "hWnd", $hWnd, "iVpW", $iViewportW, "iVpH", $iViewportH, "iCanW", $iCanvasW, "iCanH", $iCanvasH)
 	If Int($hWnd) <> 0 Then                                                                                 ;
 		$iX = _GUIScrollBars_GetScrollInfoPos($hWnd, $SB_HORZ)
 		$iY = _GUIScrollBars_GetScrollInfoPos($hWnd, $SB_VERT)
@@ -707,6 +710,7 @@ Func __Canvas_GetScrollPos(ByRef $iX, ByRef $iY, $hWnd = $g_hViewport, $oCanvas 
 		If $oCanvas.Exists('iSX') Then $iX = $oCanvas.Item('iSX')
 		If $oCanvas.Exists('iSY') Then $iY = $oCanvas.Item('iSY')
 	EndIf
+__ConsolePrintVars("__Canvas_GetScrollPos, ", "iX", $iX, "iY", $iY, "hWnd", $hWnd, "iVpW", $iViewportW, "iVpH", $iViewportH, "iCanW", $iCanvasW, "iCanH", $iCanvasH)
 EndFunc   ;==>__Canvas_GetScrollPos
 
 
@@ -840,7 +844,7 @@ Func __Canvas_WM_MOUSEWHEEL($hWnd, $iMsg, $wParam, $lParam)
 			__Canvas_SetZoom($g_oMainCanvas, $fRet, True, 'aCBCtrls')   ;     set control bar control zoom
 			__Canvas_SetZoom($g_oCanvas, $fRet, True, 'aTabCtrls')      ;     set zoom of controls that are part of the canvas, but located in the tab
 		EndIf                                                           ;   end if
-		__Canvas_WM_SIZE($hWnd, 0, 0, 0)                                ;   resettle the window size
+		__WM_SIZE($hWnd, 0, 0, 0)                                       ;   resettle the window size
 		__WinUnlockRepaint()
 	Else                                                                ; else
 		If __Canvas_IsWebView($g_oCanvas) Then Return $GUI_RUNDEFMSG    ;   if webview then pass mousewheel events along
@@ -871,6 +875,8 @@ Func __Canvas_Scroll($hWnd, $nBar, $nScrollCode, $nPos)
 
 	Local $iNewPos = $iCurPos
 
+;__ConsolePrintVars("__Canvas_Scroll, ", "iMin", $iMin, "iMax", $iMax, "iPage", $iPage, "iCurPos", $iCurPos, "iTrackPos", $iTrackPos)
+
 	Switch $nScrollCode
 		Case 0                      ; $SB_LINEUP / $SB_LINELEFT
 			$iNewPos -= 20
@@ -889,6 +895,8 @@ Func __Canvas_Scroll($hWnd, $nBar, $nScrollCode, $nPos)
 
 	If $iNewPos < $iMin Then $iNewPos = $iMin
 	If $iNewPos > $iMaxScrollable Then $iNewPos = $iMaxScrollable
+
+__ConsolePrintVars("__Canvas_Scroll, ", "iMin", $iMin, "iMax", $iMax, "iPage", $iPage, "iCurPos", $iCurPos, "iTrackPos", $iTrackPos, "iNewPos", $iNewPos)
 
 	If $iCurPos = $iNewPos Then Return                                      ; if no change then nothing to do, return
 
@@ -913,7 +921,7 @@ Func __Canvas_Scroll($hWnd, $nBar, $nScrollCode, $nPos)
 		$iViewportH = $g_iViewportH
 	EndIf
 
-	Local $iSX, $iSY, $iP, $iMin, $iMax, $iTabMin, $iSBlen = 0
+	Local $iSX, $iSY, $iP, $iTabMin, $iSBlen = 0
 	__Canvas_GetScrollPos($iSX, $iSY, $hViewport, $oCanvas, $iViewportW, $iViewportH, $iCanvasW, $iCanvasH) ; get current scroll bar offset position
 	If $nBar = $SB_HORZ Then
 		If $iViewportW > $iCanvasW Then $iNewPos = -$iNewPos                ; if canvas smaller than viewport then we are using negative positions
@@ -931,7 +939,7 @@ Func __Canvas_Scroll($hWnd, $nBar, $nScrollCode, $nPos)
 	DllStructSetData($tSI, "nPos", Abs($iNewPos))
 	_GUIScrollBars_SetScrollInfo($hWnd, $nBar, $tSI)                        ; Pass the structure cleanly to update the scrollbar thumb without triggering native frame jumping
 
-	If $g_oCanvas = $oCanvas Then                                           ; if we are a tab, then save select data back into global variables
+	If $g_hViewport = $hViewport Then                                       ; if we are a tab, then save select data back into global variables
 		$g_iTabW = $iCanvasW
 		$g_iTabH = $iCanvasH
 	EndIf
@@ -944,7 +952,6 @@ Func __Canvas_Scroll($hWnd, $nBar, $nScrollCode, $nPos)
 	EndIf
 	_WinAPI_SetWindowPos($hCanvas, 0, -$iSX, -$iSY, 0, 0, _                 ; scroll canvas to absolute position
 			BitOR($SWP_NOSIZE, $SWP_NOZORDER, $SWP_NOACTIVATE))             ; SWP_NOSIZE (0x0001) preserves the canvas tracking width/height ($g_iTabW, $g_iTabH)
-
 
 EndFunc   ;==>__Canvas_Scroll
 
