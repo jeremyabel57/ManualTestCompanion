@@ -415,8 +415,8 @@ Func tpTab_oInfoWin($oMeas)                     ; return handle of measurement I
 	If Not $oMeas.Exists('oInfoWin') Then Return 0
 	Local $oInfoWin = $oMeas.Item('oInfoWin')
 	If Not __IsDictionary($oInfoWin) Then Return 0
-	return $oInfoWin
-EndFunc   ;==>tpTab_hInfoWin
+	Return $oInfoWin
+EndFunc   ;==>tpTab_oInfoWin
 
 
 
@@ -537,6 +537,7 @@ Func tpTab_SetupSigs($oMeas)
 	;	[i][4] = (combo) drop-down selector for the oscope channel to use for this signal
 
 	Local $aSigs = tpTab_aSigs($oMeas)
+	if @error then return
 	Local $iBus = Int(GUICtrlRead($aSigs[0][1]))
 	If $iBus < 1 Or 8 < $iBus Then $iBus = 1
 	Local $i = $aSigs[0][0]
@@ -758,7 +759,9 @@ Func tpTab_aSigs($oMeas)
 		Local $aSigs = $oMeas.Item('aSigs')
 		If IsArray($aSigs) Then
 			If UBound($aSigs, 0) >= 2 Then
-				If UBound($aSigs, 2) >= 5 Then Return $aSigs
+				If UBound($aSigs, 2) >= 5 Then
+					If UBound($aSigs, 1) >= 1 Then Return $aSigs
+				EndIf
 			EndIf
 		EndIf
 	EndIf
@@ -1127,19 +1130,27 @@ Func tpTab_ConfigWriteTab($oMeas)
 	;	[i][3] = (label) gui label for this signal (this bus copy)
 	;	[i][4] = (combo) drop-down selector for the oscope channel to use for this signal
 	Local $aSigs = tpTab_aSigs($oMeas)
-	If Not @error Then
-		__IniWriteGui($aSigs[0][1], "busi", $sTP, $g_sTPiniFile)
-		__IniWriteGui($aSigs[0][3], "busn", $sTP, $g_sTPiniFile)
-		Local $i, $n = Int($aSigs[0][0]), $j, $k, $h
-		For $j = 0 To 7
-			$k = $j * $n
-			__IniWriteGui($aSigs[$k + 1][0], "b" & $k & "name", $sTP, $g_sTPiniFile)
-			For $i = 1 To $n
-				$h = $k + $i
-				__IniWriteGui($aSigs[$h][3], "b" & $h & "sig", $sTP, $g_sTPiniFile)
-				__IniWriteGuiComboBox($aSigs[$h][4], "b" & $h & "ch", $sTP, $g_sTPiniFile)
-			Next
-		Next
+	If Not @error And IsArray($aSigs) Then
+		If UBound($aSigs, 0) = 2 And UBound($aSigs, 1) >= 1 Then
+			If UBound($aSigs, 2) >= 5 Then
+				__IniWriteGui($aSigs[0][1], "busi", $sTP, $g_sTPiniFile)
+				__IniWriteGui($aSigs[0][3], "busn", $sTP, $g_sTPiniFile)
+				Local $i, $n = Int($aSigs[0][0]), $j, $k, $h, $m = UBound($aSigs, 1) - 1
+				For $j = 0 To 7
+					$k = $j * $n
+					If $k <= $m Then
+						__IniWriteGui($aSigs[$k + 1][0], "b" & $k & "name", $sTP, $g_sTPiniFile)
+						For $i = 1 To $n
+							$h = $k + $i
+							If $h <= $m Then
+								__IniWriteGui($aSigs[$h][3], "b" & $h & "sig", $sTP, $g_sTPiniFile)
+								__IniWriteGuiComboBox($aSigs[$h][4], "b" & $h & "ch", $sTP, $g_sTPiniFile)
+							EndIf
+						Next
+					EndIf
+				Next
+			EndIf
+		EndIf
 	EndIf
 
 EndFunc   ;==>tpTab_ConfigWriteTab
@@ -1193,19 +1204,27 @@ Func tpTab_ConfigReadTab($oMeas)
 	;	[i][3] = (label) gui label for this signal (this bus copy)
 	;	[i][4] = (combo) drop-down selector for the oscope channel to use for this signal
 	Local $aSigs = tpTab_aSigs($oMeas)
-	If Not @error Then
-		__IniReadGui($aSigs[0][1], "busi", $sTP, $g_sTPiniFile)
-		__IniReadGui($aSigs[0][3], "busn", $sTP, $g_sTPiniFile)
-		Local $i, $n = Int($aSigs[0][0]), $j, $k, $h
-		For $j = 0 To 7
-			$k = $j * $n
-			__IniReadGui($aSigs[$k + 1][0], "b" & $k & "name", $sTP, $g_sTPiniFile)
-			For $i = 1 To $n
-				$h = $k + $i
-				__IniReadGui($aSigs[$h][3], "b" & $h & "sig", $sTP, $g_sTPiniFile)
-				__IniReadGuiComboBox($aSigs[$h][4], "b" & $h & "ch", $sTP, $g_sTPiniFile)
-			Next
-		Next
+	If Not @error And IsArray($aSigs) Then
+		If UBound($aSigs, 0) = 2 And UBound($aSigs, 1) >= 1 Then
+			If UBound($aSigs, 2) >= 5 Then
+				__IniReadGui($aSigs[0][1], "busi", $sTP, $g_sTPiniFile)
+				__IniReadGui($aSigs[0][3], "busn", $sTP, $g_sTPiniFile)
+				Local $i, $n = Int($aSigs[0][0]), $j, $k, $h, $m = UBound($aSigs, 1) - 1
+				For $j = 0 To 7
+					$k = $j * $n
+					If $k <= $m Then
+						__IniReadGui($aSigs[$k + 1][0], "b" & $k & "name", $sTP, $g_sTPiniFile)
+						For $i = 1 To $n
+							$h = $k + $i
+							If $h <= $m Then
+								__IniReadGui($aSigs[$h][3], "b" & $h & "sig", $sTP, $g_sTPiniFile)
+								__IniReadGuiComboBox($aSigs[$h][4], "b" & $h & "ch", $sTP, $g_sTPiniFile)
+							EndIf
+						Next
+					EndIf
+				Next
+			EndIf
+		EndIf
 	EndIf
 
 	tpTab_BusNsel($oMeas)       ; update bus count selection and visible bus names in gui

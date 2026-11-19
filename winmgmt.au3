@@ -697,7 +697,7 @@ EndFunc   ;==>__GenCanvas_WM_SIZE
 
 
 Func __Canvas_GetScrollPos(ByRef $iX, ByRef $iY, $hWnd = $g_hViewport, $oCanvas = $g_oCanvas, $iViewportW = $g_iViewportW, $iViewportH = $g_iViewportH, $iCanvasW = $g_iTabW, $iCanvasH = $g_iTabH)
-	__ConsolePrintVars("__Canvas_GetScrollPos, ", "iX", $iX, "iY", $iY, "hWnd", $hWnd, "iVpW", $iViewportW, "iVpH", $iViewportH, "iCanW", $iCanvasW, "iCanH", $iCanvasH)
+	;__ConsolePrintVars("__Canvas_GetScrollPos, ", "iX", $iX, "iY", $iY, "hWnd", $hWnd, "iVpW", $iViewportW, "iVpH", $iViewportH, "iCanW", $iCanvasW, "iCanH", $iCanvasH)
 	If Int($hWnd) <> 0 Then                                                                                 ;
 		$iX = _GUIScrollBars_GetScrollInfoPos($hWnd, $SB_HORZ)
 		$iY = _GUIScrollBars_GetScrollInfoPos($hWnd, $SB_VERT)
@@ -710,7 +710,7 @@ Func __Canvas_GetScrollPos(ByRef $iX, ByRef $iY, $hWnd = $g_hViewport, $oCanvas 
 		If $oCanvas.Exists('iSX') Then $iX = $oCanvas.Item('iSX')
 		If $oCanvas.Exists('iSY') Then $iY = $oCanvas.Item('iSY')
 	EndIf
-	__ConsolePrintVars("__Canvas_GetScrollPos, ", "iX", $iX, "iY", $iY, "hWnd", $hWnd, "iVpW", $iViewportW, "iVpH", $iViewportH, "iCanW", $iCanvasW, "iCanH", $iCanvasH)
+	;__ConsolePrintVars("__Canvas_GetScrollPos, ", "iX", $iX, "iY", $iY, "hWnd", $hWnd, "iVpW", $iViewportW, "iVpH", $iViewportH, "iCanW", $iCanvasW, "iCanH", $iCanvasH)
 EndFunc   ;==>__Canvas_GetScrollPos
 
 
@@ -896,7 +896,7 @@ Func __Canvas_Scroll($hWnd, $nBar, $nScrollCode, $nPos)
 	If $iNewPos < $iMin Then $iNewPos = $iMin
 	If $iNewPos > $iMaxScrollable Then $iNewPos = $iMaxScrollable
 
-	__ConsolePrintVars("__Canvas_Scroll, ", "iMin", $iMin, "iMax", $iMax, "iPage", $iPage, "iCurPos", $iCurPos, "iTrackPos", $iTrackPos, "iNewPos", $iNewPos)
+	;__ConsolePrintVars("__Canvas_Scroll, ", "iMin", $iMin, "iMax", $iMax, "iPage", $iPage, "iCurPos", $iCurPos, "iTrackPos", $iTrackPos, "iNewPos", $iNewPos)
 
 	If $iCurPos = $iNewPos Then Return                                      ; if no change then nothing to do, return
 
