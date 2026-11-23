@@ -1,7 +1,10 @@
+from pathlib import Path
+from tempfile import TemporaryDirectory
 import threading
 import unittest
 
 from manual_test_companion.script import ScriptCancelled, ScriptError, ScriptRunner
+from manual_test_companion.script_files import read_script_file, write_script_file
 
 
 class FakeVisa:
@@ -35,6 +38,23 @@ class FakeModbus:
 
     def close(self) -> None:
         pass
+
+
+class ScriptFileTests(unittest.TestCase):
+    def test_reads_and_writes_utf8_script_file(self) -> None:
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "test.txt"
+            write_script_file(path, "log ready\n")
+            source = read_script_file(path)
+
+        self.assertEqual(source, "log ready\n")
+
+    def test_reports_script_file_errors(self) -> None:
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "missing.txt"
+
+            with self.assertRaisesRegex(OSError, "missing.txt"):
+                read_script_file(path)
 
 
 class ScriptRunnerTests(unittest.TestCase):

@@ -23,6 +23,8 @@ from .frequency_counter import FrequencyStats
 from .frequency_worker import FrequencyCounterWorker, FrequencyResult
 from .oscilloscope import scope_url_from_address
 from .script_worker import ScriptEvent, ScriptWorker
+from .script_files import read_script_file, write_script_file
+from .discovery_worker import DiscoveryResult, DiscoveryWorker
 from .scope_file_manager import ScopeDirectory, ScopeDirectoryEntry, scope_join_path
 from .scope_file_manager_worker import ScopeFMResult, ScopeFileManagerWorker
 from .scope_screenshot_worker import ScopeScreenshotResult, ScopeScreenshotWorker
@@ -53,6 +55,7 @@ _WM_APP_DCPS_RESULT = 0x8003
 _WM_APP_FREQUENCY_RESULT = 0x8004
 _WM_APP_SCOPE_FM_RESULT = 0x8005
 _WM_APP_SCOPE_SCREENSHOT_RESULT = 0x8006
+_WM_APP_DISCOVERY_RESULT = 0x8007
 _WM_WEBVIEW2_ENVIRONMENT_CREATED = 0x8000 + 100
 _WM_WEBVIEW2_CONTROLLER_CREATED = 0x8000 + 101
 _CHAMBER_TIMER = 1
@@ -102,6 +105,10 @@ _SCRIPT_CONTROL_IDS = {
     "queue": 4027,
     "run_queue": 4028,
     "clear_queue": 4029,
+    "open": 4030,
+    "save": 4031,
+    "subnet": 4032,
+    "scan": 4033,
 }
 _DCPS_CONTROL_IDS = {
     "connect": 4101,
@@ -257,10 +264,12 @@ class ManualTestCompanionApp:
         self._dcps_results: queue.SimpleQueue[DCPSResult] = queue.SimpleQueue()
         self._frequency_results: queue.SimpleQueue[FrequencyResult] = queue.SimpleQueue()
         self._script_results: queue.SimpleQueue[ScriptEvent] = queue.SimpleQueue()
+        self._discovery_results: queue.SimpleQueue[DiscoveryResult] = queue.SimpleQueue()
         self._chamber_worker: ChamberWorker | None = None
         self._dcps_worker: DCPSWorker | None = None
         self._frequency_worker: FrequencyCounterWorker | None = None
         self._script_worker = ScriptWorker(self._publish_script_result)
+        self._discovery_worker = DiscoveryWorker(self._publish_discovery_result)
         self._scope_host = WebView2Host(self._set_scope_status)
         self._scope_start_attempted = False
         self._scope_screenshot_results: queue.SimpleQueue[ScopeScreenshotResult] = (
@@ -354,6 +363,8 @@ class ManualTestCompanionApp:
             _WM_APP_DCPS_RESULT: self._window_proc,
             _WM_APP_FREQUENCY_RESULT: self._window_proc,
             _WM_APP_SCOPE_FM_RESULT: self._window_proc,
+            _WM_APP_SCOPE_SCREENSHOT_RESULT: self._window_proc,
+            _WM_APP_DISCOVERY_RESULT: self._window_proc,
             _WM_WEBVIEW2_ENVIRONMENT_CREATED: self._window_proc,
             _WM_WEBVIEW2_CONTROLLER_CREATED: self._window_proc,
         })
@@ -1887,6 +1898,50 @@ class ManualTestCompanionApp:
             control_id=_SCRIPT_CONTROL_IDS["clear_queue"],
             extra_style=win32con.WS_TABSTOP,
         )
+        self.diagnostic_controls["open"] = self._create_chamber_control(
+            page,
+            "BUTTON",
+            "Open",
+            440,
+            0,
+            75,
+            27,
+            control_id=_SCRIPT_CONTROL_IDS["open"],
+            extra_style=win32con.WS_TABSTOP,
+        )
+        self.diagnostic_controls["subnet"] = self._create_chamber_control(
+            page,
+            "EDIT",
+            "192.168.0.0",
+            600,
+            34,
+            100,
+            25,
+            control_id=_SCRIPT_CONTROL_IDS["subnet"],
+            extra_style=win32con.WS_BORDER | win32con.ES_AUTOHSCROLL | win32con.WS_TABSTOP,
+        )
+        self.diagnostic_controls["scan"] = self._create_chamber_control(
+            page,
+            "BUTTON",
+            "Scan subnet",
+            705,
+            34,
+            90,
+            25,
+            control_id=_SCRIPT_CONTROL_IDS["scan"],
+            extra_style=win32con.WS_TABSTOP,
+        )
+        self.diagnostic_controls["save"] = self._create_chamber_control(
+            page,
+            "BUTTON",
+            "Save",
+            520,
+            0,
+            75,
+            27,
+            control_id=_SCRIPT_CONTROL_IDS["save"],
+            extra_style=win32con.WS_TABSTOP,
+        )
 
     @staticmethod
     def _temperature_unit_label(celsius: bool) -> str:
@@ -1995,6 +2050,12 @@ class ManualTestCompanionApp:
             self._run_master_queue()
         elif control_id == _SCRIPT_CONTROL_IDS["clear_queue"]:
             self._clear_master_queue()
+        elif control_id == _SCRIPT_CONTROL_IDS["open"]:
+            self._open_diagnostic_script()
+        elif control_id == _SCRIPT_CONTROL_IDS["save"]:
+            self._save_diagnostic_script()
+        elif control_id == _SCRIPT_CONTROL_IDS["scan"]:
+            self._scan_diagnostic_subnet()
         else:
             for index in range(4):
                 if control_id == _DCPS_CHANNEL_CONTROL_BASES["apply_voltage"] + index:
@@ -2492,6 +2553,93 @@ class ManualTestCompanionApp:
             win32gui.EnableWindow(self.diagnostic_controls["run_queue"], True)
             self._set_status(str(error))
 
+    def _open_diagnostic_script(self) -> None:
+        dialog = win32ui.CreateFileDialog(
+            1,
+            "txt",
+            str(self._diagnostic_script_path),
+            win32con.OFN_FILEMUSTEXIST | win32con.OFN_PATHMUSTEXIST,
+            "Text scripts (*.txt)|*.txt|All files (*.*)|*.*||",
+            self.window,
+        )
+        if dialog.DoModal() != win32con.IDOK:
+            return
+        path = Path(dialog.GetPathName())
+        try:
+            source = read_script_file(path)
+        except OSError as error:
+            self._set_status(f"Could not open script: {error}")
+            return
+        win32gui.SetWindowText(self.diagnostic_controls["script"], source)
+        self._diagnostic_script_path = path
+        self._set_status(f"Opened script {path}")
+
+    def _save_diagnostic_script(self) -> None:
+        dialog = win32ui.CreateFileDialog(
+            0,
+            "txt",
+            str(self._diagnostic_script_path),
+            win32con.OFN_PATHMUSTEXIST | win32con.OFN_OVERWRITEPROMPT,
+            "Text scripts (*.txt)|*.txt|All files (*.*)|*.*||",
+            self.window,
+        )
+        if dialog.DoModal() != win32con.IDOK:
+            return
+        path = Path(dialog.GetPathName())
+        source = win32gui.GetWindowText(self.diagnostic_controls["script"])
+        try:
+            write_script_file(path, source)
+        except OSError as error:
+            self._set_status(f"Could not save script: {error}")
+            return
+        self._diagnostic_script_path = path
+        self._set_status(f"Saved script {path}")
+
+    def _scan_diagnostic_subnet(self) -> None:
+        subnet = win32gui.GetWindowText(self.diagnostic_controls["subnet"]).strip()
+        if not subnet:
+            self._set_status("Enter a /24 subnet such as 192.168.0.0.")
+            return
+        try:
+            self._discovery_worker.start(subnet)
+        except RuntimeError as error:
+            self._set_status(str(error))
+            return
+        win32gui.EnableWindow(self.diagnostic_controls["scan"], False)
+        self._set_status(f"Scanning subnet {subnet}...")
+
+    def _publish_discovery_result(self, result: DiscoveryResult) -> None:
+        self._discovery_results.put(result)
+        if self.window and win32gui.IsWindow(self.window):
+            win32gui.PostMessage(self.window, _WM_APP_DISCOVERY_RESULT, 0, 0)
+
+    def _consume_discovery_results(self) -> None:
+        if "scan" in self.diagnostic_controls:
+            win32gui.EnableWindow(self.diagnostic_controls["scan"], True)
+        while True:
+            try:
+                result = self._discovery_results.get_nowait()
+            except queue.Empty:
+                return
+            if result.error is not None:
+                message = f"Subnet scan failed: {result.error}"
+            elif not result.devices:
+                message = "Subnet scan completed: no VISA devices found."
+            else:
+                lines = [
+                    f"{device.host}: {device.address} - {device.identity}"
+                    for device in result.devices
+                ]
+                message = "Subnet scan found " + str(len(result.devices)) + " device(s):\n" + "\n".join(lines)
+                win32gui.SendMessage(self.diagnostic_controls["output"], _EM_SETSEL, -1, -1)
+                win32gui.SendMessage(
+                    self.diagnostic_controls["output"],
+                    _EM_REPLACESEL,
+                    0,
+                    message + "\r\n",
+                )
+            self._set_status(message)
+
     def _clear_master_queue(self) -> None:
         self._script_worker.clear_queue()
         self._set_status("Master script queue cleared.")
@@ -2538,6 +2686,8 @@ class ManualTestCompanionApp:
             win32gui.EnableWindow(self.diagnostic_controls["queue"], not running)
             win32gui.EnableWindow(self.diagnostic_controls["run_queue"], not running)
             win32gui.EnableWindow(self.diagnostic_controls["clear_queue"], not running)
+            win32gui.EnableWindow(self.diagnostic_controls["open"], not running)
+            win32gui.EnableWindow(self.diagnostic_controls["save"], not running)
 
     def _publish_script_result(self, result: ScriptEvent) -> None:
         self._script_results.put(result)
@@ -3713,6 +3863,59 @@ class ManualTestCompanionApp:
             25,
             True,
         )
+        if "subnet" in self.diagnostic_controls:
+            subnet_x = max(queue_x + 279, width - 195)
+            win32gui.MoveWindow(
+                self.diagnostic_controls["subnet"],
+                subnet_x,
+                34,
+                100,
+                25,
+                True,
+            )
+            win32gui.MoveWindow(
+                self.diagnostic_controls["scan"],
+                subnet_x + 105,
+                34,
+                90,
+                25,
+                True,
+            )
+        file_x = min(width - 155, queue_x + 279)
+        win32gui.MoveWindow(
+            self.diagnostic_controls["open"],
+            file_x,
+            34,
+            75,
+            25,
+            True,
+        )
+        win32gui.MoveWindow(
+            self.diagnostic_controls["save"],
+            file_x + 80,
+            34,
+            75,
+            25,
+            True,
+        )
+        if "subnet" in self.diagnostic_controls:
+            subnet_x = max(file_x + 160, width - 195)
+            win32gui.MoveWindow(
+                self.diagnostic_controls["subnet"],
+                subnet_x,
+                34,
+                100,
+                25,
+                True,
+            )
+            win32gui.MoveWindow(
+                self.diagnostic_controls["scan"],
+                subnet_x + 105,
+                34,
+                90,
+                25,
+                True,
+            )
 
     def _select_page(self, index: int) -> None:
         for page_index, page in enumerate(self.pages):
@@ -3872,6 +4075,8 @@ class ManualTestCompanionApp:
             return 0
         if message == _WM_APP_SCOPE_SCREENSHOT_RESULT:
             self._consume_scope_screenshot_results()
+        if message == _WM_APP_DISCOVERY_RESULT:
+            self._consume_discovery_results()
             return 0
         if message == win32con.WM_NOTIFY and lparam:
             notification = ctypes.cast(lparam, ctypes.POINTER(_NotifyHeader)).contents

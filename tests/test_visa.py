@@ -5,6 +5,57 @@ from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 from manual_test_companion.visa import InstrumentAddress, InstrumentSession
+from manual_test_companion.discovery import parse_subnet, probe_raw_tcp, scan_subnet
+from manual_test_companion.discovery_worker import DiscoveryWorker
+
+
+class DiscoveryTests(unittest.TestCase):
+    def test_worker_publishes_background_result(self) -> None:
+        import queue
+        import time
+
+        results: queue.Queue[object] = queue.Queue()
+        worker = DiscoveryWorker(results.put)
+        with patch("manual_test_companion.discovery_worker.scan_subnet", return_value=()) as scan:
+            worker.start("192.168.0.0")
+            result = results.get(timeout=2)
+
+        scan.assert_called_once_with("192.168.0.0")
+        self.assertEqual(result.error, None)
+        self.assertEqual(result.devices, ())
+
+    def test_parses_subnet_and_rejects_invalid_prefix(self) -> None:
+        self.assertEqual(parse_subnet("192.168.0.0"), tuple(f"192.168.0.{index}" for index in range(1, 255)))
+        with self.assertRaisesRegex(ValueError, "subnet"):
+            parse_subnet("192.168.0")
+
+    def test_raw_tcp_probe_uses_query_and_close(self) -> None:
+        class FakeSocket:
+            def settimeout(self, timeout: float) -> None:
+                pass
+
+            def sendall(self, payload: bytes) -> None:
+                self.payload = payload
+
+            def recv(self, size: int) -> bytes:
+                return b"Fake Instrument\n"
+
+            def close(self) -> None:
+                pass
+
+        with patch("manual_test_companion.discovery.socket.create_connection", return_value=FakeSocket()) as create:
+            identity = probe_raw_tcp("192.168.0.25")
+
+        create.assert_called_once()
+        self.assertEqual(identity, "Fake Instrument")
+
+    def test_scan_subnet_returns_sorted_discovered_devices(self) -> None:
+        with patch("manual_test_companion.discovery.probe_raw_tcp", side_effect=lambda host, port, timeout: "Scope" if host == "192.168.0.14" else None):
+            devices = scan_subnet("192.168.0.0", timeout=0.01, max_workers=8)
+
+        self.assertEqual(len(devices), 1)
+        self.assertEqual(devices[0].host, "192.168.0.14")
+        self.assertEqual(devices[0].address, "raw:192.168.0.14:5025")
 
 
 class InstrumentAddressTests(unittest.TestCase):
