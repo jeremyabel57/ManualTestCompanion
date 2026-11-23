@@ -3,6 +3,7 @@ from __future__ import annotations
 import configparser
 from dataclasses import dataclass
 from pathlib import Path
+import zipfile
 
 from .config import LegacyConfig
 
@@ -109,6 +110,68 @@ def load_i2c_profile(path: Path) -> I2CProfile:
         bus_names=tuple(bus_names),
         channel_assignments=tuple(channel_assignments),
     )
+
+
+def load_measurement_script(path: Path, *, capture: bool) -> tuple[str, ...]:
+    """Read the #set or #get SCPI section from a legacy measurement script."""
+    try:
+        lines = path.read_text(encoding="utf-8-sig").splitlines()
+    except (OSError, UnicodeDecodeError) as error:
+        raise ValueError(f"could not read measurement script {path}: {error}") from error
+
+    wanted = "#get" if capture else "#set"
+    commands: list[str] = []
+    inside = False
+    saw_wanted = False
+
+    for raw_line in lines:
+        line = raw_line.strip()
+        marker = line.casefold()
+        if marker in {"#set", "#get"}:
+            if marker == wanted:
+                inside = not inside
+                if inside:
+                    saw_wanted = True
+            else:
+                inside = False
+            continue
+        if inside and line and not line.startswith("#"):
+            commands.append(line)
+
+    if not saw_wanted:
+        raise ValueError(f"measurement script {path} has no {wanted} section")
+    if not commands:
+        raise ValueError(f"measurement script {path} {wanted} section is empty")
+    return tuple(commands)
+
+
+def load_scope_setup(path: Path) -> tuple[str, ...]:
+    """Load SCPI commands from a plain setup file or legacy ZIP .set file."""
+    try:
+        if zipfile.is_zipfile(path):
+            with zipfile.ZipFile(path, "r") as archive:
+                setup_members = [
+                    member
+                    for member in archive.infolist()
+                    if not member.is_dir() and member.filename.casefold().endswith(".set")
+                ]
+                if not setup_members:
+                    raise ValueError(f"scope setup {path} contains no .set payload")
+                payload = archive.read(setup_members[0]).decode("utf-8-sig")
+        else:
+            payload = path.read_text(encoding="utf-8-sig")
+    except (OSError, UnicodeDecodeError, zipfile.BadZipFile) as error:
+        raise ValueError(f"could not read scope setup {path}: {error}") from error
+
+    commands: list[str] = []
+    for line in payload.replace("\r", "").split("\n"):
+        for command in line.split(";"):
+            command = command.strip()
+            if command:
+                commands.append(command)
+    if not commands:
+        raise ValueError(f"scope setup {path} contains no SCPI commands")
+    return tuple(commands)
 
 
 def save_i2c_profile(path: Path, profile: I2CProfile) -> None:

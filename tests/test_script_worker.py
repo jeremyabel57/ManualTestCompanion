@@ -1,6 +1,8 @@
 import queue
 import threading
+import time
 import unittest
+from unittest.mock import Mock
 
 from manual_test_companion.script_worker import ScriptEvent, ScriptWorker
 
@@ -79,6 +81,35 @@ class ScriptWorkerTests(unittest.TestCase):
         self.assertEqual(modbus.reads, [(100, "1i")])
         self.assertTrue(visa.closed.wait(2))
         self.assertTrue(modbus.closed.wait(2))
+
+    def test_runs_queued_scripts_sequentially(self) -> None:
+        publish = Mock()
+        visa_sessions = []
+        close = Mock()
+
+        def visa_factory(address: str) -> object:
+            session = Mock()
+            session.query.return_value = address
+            session.write.return_value = None
+            session.close = close
+            visa_sessions.append(session)
+            return session
+
+        worker = ScriptWorker(publish, visa_factory=visa_factory)
+        worker.queue_script("$first = 1", visa_address="raw:192.0.2.10:5025")
+        worker.queue_script("print \"second\"", visa_address="raw:192.0.2.11:5025")
+
+        worker.start_queued()
+        deadline = time.monotonic() + 2
+        while worker.is_running and time.monotonic() < deadline:
+            time.sleep(0.01)
+
+        self.assertFalse(worker.is_running)
+        self.assertEqual(worker.pending_count, 0)
+        texts = [call.args[0].text for call in publish.call_args_list]
+        self.assertEqual(len(visa_sessions), 2)
+        self.assertTrue(any(text.startswith("Script 1 completed") for text in texts))
+        self.assertTrue(any(text.startswith("Script 2 completed") for text in texts))
 
     def test_reports_close_failure_instead_of_success(self) -> None:
         events: queue.Queue[ScriptEvent] = queue.Queue()

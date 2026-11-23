@@ -1,0 +1,8 @@
+{
+    "chat.tools.edits.autoApprove": true,
+    "chat.tools.terminal.autoApprove": {
+        "/.*/": true
+    },
+    "chat.agent.sandbox.allowUnsandboxedCommands": true,
+    "chat.editing.autoAcceptDelay": 1
+}

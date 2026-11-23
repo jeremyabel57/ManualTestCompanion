@@ -27,7 +27,15 @@ from .scope_file_manager import ScopeDirectory, ScopeDirectoryEntry, scope_join_
 from .scope_file_manager_worker import ScopeFMResult, ScopeFileManagerWorker
 from .scope_screenshot_worker import ScopeScreenshotResult, ScopeScreenshotWorker
 from .settings import TestVariable, load_test_variables, save_test_variables
-from .test_profile import I2CProfile, SCOPE_CHANNELS, TestMeasurement, load_i2c_profile, save_i2c_profile
+from .test_profile import (
+    I2CProfile,
+    SCOPE_CHANNELS,
+    TestMeasurement,
+    load_i2c_profile,
+    load_measurement_script,
+    load_scope_setup,
+    save_i2c_profile,
+)
 from .webview2_host import WebView2Host
 
 
@@ -71,7 +79,11 @@ _I2C_CONTROL_IDS = {
     "bus_count": 4601,
     "bus_select": 4602,
     "bus_name": 4603,
+    "scope_address": 4604,
+    "run_setup": 4605,
     "measurement_include_base": 4700,
+    "measurement_setup_base": 5000,
+    "measurement_capture_base": 5100,
     "measurement_verify_base": 4800,
     "signal_channel_base": 4900,
 }
@@ -84,7 +96,13 @@ _CHAMBER_CONTROL_IDS = {
     "output": 4016,
     "notify": 4017,
 }
-_SCRIPT_CONTROL_IDS = {"run": 4021, "cancel": 4022}
+_SCRIPT_CONTROL_IDS = {
+    "run": 4021,
+    "cancel": 4022,
+    "queue": 4027,
+    "run_queue": 4028,
+    "clear_queue": 4029,
+}
 _DCPS_CONTROL_IDS = {
     "connect": 4101,
     "monitor": 4102,
@@ -230,6 +248,8 @@ class ManualTestCompanionApp:
         self._i2c_measurement_include_controls: list[int] = []
         self._i2c_measurement_label_controls: list[int] = []
         self._i2c_measurement_verify_controls: list[int] = []
+        self._i2c_measurement_setup_controls: list[int] = []
+        self._i2c_measurement_capture_controls: list[int] = []
         self._i2c_signal_label_controls: list[int] = []
         self._i2c_signal_channel_controls: list[int] = []
         self.diagnostic_controls: dict[str, int] = {}
@@ -265,6 +285,7 @@ class ManualTestCompanionApp:
         self._chamber_busy = False
         self._dcps_busy = False
         self._script_running = False
+        self._master_queue_running = False
         self._chamber_connected = False
         self._dcps_connected = False
         self._frequency_connected = False
@@ -293,6 +314,10 @@ class ManualTestCompanionApp:
         self._frequency_last_poll_at = 0.0
         self._frequency_last_count: tuple[int, float] | None = None
         self._frequency_stats: FrequencyStats | None = None
+        self.i2c_config = LegacyConfig(self.config_path, "I2C")
+        self._i2c_visa_address = self.i2c_config.get_str("IpAddr", "192.168.0.14")
+        self._i2c_script_running = False
+        self._i2c_capture_pending: Path | None = None
         self.diagnostic_config = LegacyConfig(self.config_path, "Diag")
         self._diagnostic_visa_address = self.diagnostic_config.get_str("IpAddr", "")
         self._diagnostic_modbus_host = self.diagnostic_config.get_str("ModbusIpAddr", "")
@@ -717,11 +742,36 @@ class ManualTestCompanionApp:
             page,
             "STATIC",
             self._i2c_profile_error
-            or "Select measurements and scope channels. Measurement scripts are not ported yet.",
+            or "Select measurements and scope channels.",
             10,
             34,
             740,
             30,
+        )
+        self.i2c_controls["scope_address_label"] = self._create_chamber_control(
+            page, "STATIC", "Scope:", 270, 10, 45, 22
+        )
+        self.i2c_controls["scope_address"] = self._create_chamber_control(
+            page,
+            "EDIT",
+            self._i2c_visa_address,
+            315,
+            7,
+            150,
+            25,
+            control_id=_I2C_CONTROL_IDS["scope_address"],
+            extra_style=win32con.WS_BORDER | win32con.ES_AUTOHSCROLL | win32con.WS_TABSTOP,
+        )
+        self.i2c_controls["run_setup"] = self._create_chamber_control(
+            page,
+            "BUTTON",
+            "Run setup",
+            475,
+            7,
+            90,
+            25,
+            control_id=_I2C_CONTROL_IDS["run_setup"],
+            extra_style=win32con.WS_TABSTOP,
         )
         if self._i2c_profile is None:
             return
@@ -734,6 +784,12 @@ class ManualTestCompanionApp:
         )
         self.i2c_controls["verify_header"] = self._create_chamber_control(
             page, "STATIC", "Verify", 285, 70, 60, 20
+        )
+        self.i2c_controls["setup_header"] = self._create_chamber_control(
+            page, "STATIC", "Setup", 340, 70, 55, 20
+        )
+        self.i2c_controls["capture_header"] = self._create_chamber_control(
+            page, "STATIC", "Capture", 395, 70, 55, 20
         )
         for index, measurement in enumerate(self._i2c_profile.measurements):
             include = self._create_chamber_control(
@@ -757,6 +813,28 @@ class ManualTestCompanionApp:
                 20,
                 control_id=_I2C_CONTROL_IDS["measurement_verify_base"] + index,
                 extra_style=win32con.BS_AUTOCHECKBOX | win32con.WS_TABSTOP,
+            )
+            setup = self._create_chamber_control(
+                page,
+                "BUTTON",
+                "Setup",
+                340,
+                96 + index * 25,
+                55,
+                20,
+                control_id=_I2C_CONTROL_IDS["measurement_setup_base"] + index,
+                extra_style=win32con.WS_TABSTOP,
+            )
+            capture = self._create_chamber_control(
+                page,
+                "BUTTON",
+                "Capture",
+                395,
+                96 + index * 25,
+                55,
+                20,
+                control_id=_I2C_CONTROL_IDS["measurement_capture_base"] + index,
+                extra_style=win32con.WS_TABSTOP,
             )
             description = f" - {measurement.description}" if measurement.description else ""
             label = self._create_chamber_control(
@@ -783,6 +861,8 @@ class ManualTestCompanionApp:
             self._i2c_measurement_include_controls.append(include)
             self._i2c_measurement_label_controls.append(label)
             self._i2c_measurement_verify_controls.append(verify)
+            self._i2c_measurement_setup_controls.append(setup)
+            self._i2c_measurement_capture_controls.append(capture)
 
         self.i2c_controls["bus_count_label"] = self._create_chamber_control(
             page, "STATIC", "Bus count:", 360, 70, 70, 22
@@ -1020,6 +1100,130 @@ class ManualTestCompanionApp:
         save_i2c_profile(self.i2c_profile_path, updated)
         self._i2c_profile = updated
 
+    def _run_i2c_setup(self) -> None:
+        if self._i2c_script_running:
+            return
+        address = win32gui.GetWindowText(self.i2c_controls["scope_address"]).strip()
+        if not address:
+            self._set_i2c_status("Enter the oscilloscope VISA or raw socket address.")
+            return
+        try:
+            setup_path = self.config_path.parent / "testProfiles" / "setup" / "i2c.set"
+            source = "\n".join(load_scope_setup(setup_path))
+            profile = self._collect_i2c_profile()
+            variables = {
+                variable.name.removeprefix("$"): variable.value
+                for variable in self._test_variables
+                if variable.name
+            }
+            if profile is not None:
+                bus_index = profile.selected_bus - 1
+                for signal, channel in zip(
+                    profile.signals,
+                    profile.channel_assignments[bus_index],
+                    strict=True,
+                ):
+                    variables[signal.name] = channel
+                variables["bus"] = profile.selected_bus
+            self.i2c_config.update({"IpAddr": address})
+            self._i2c_visa_address = address
+            self._i2c_script_running = True
+            win32gui.EnableWindow(self.i2c_controls["run_setup"], False)
+            self._set_i2c_status("Running I2C oscilloscope setup...")
+            self._script_worker.start(
+                source,
+                visa_address=address,
+                variables=variables,
+            )
+        except (OSError, RuntimeError, ValueError) as error:
+            self._i2c_script_running = False
+            win32gui.EnableWindow(self.i2c_controls["run_setup"], True)
+            self._set_i2c_status(f"Could not run I2C setup: {error}")
+
+    def _i2c_script_variables(self) -> dict[str, object]:
+        variables = {
+            variable.name.removeprefix("$"): variable.value
+            for variable in self._test_variables
+            if variable.name
+        }
+        profile = self._collect_i2c_profile()
+        if profile is not None:
+            bus_index = profile.selected_bus - 1
+            for signal, channel in zip(
+                profile.signals,
+                profile.channel_assignments[bus_index],
+                strict=True,
+            ):
+                variables[signal.name] = channel
+            variables["bus"] = profile.selected_bus
+        return variables
+
+    def _find_i2c_measurement_script(self, symbol: str) -> Path:
+        folder = self.config_path.parent / "testProfiles"
+        normalized = symbol.replace(";", "_")
+        candidates = (
+            folder / f"mI2C_{normalized}.txt",
+            folder / f"mI2C_{normalized}p.txt",
+        )
+        for candidate in candidates:
+            if candidate.is_file():
+                return candidate
+        raise ValueError(
+            f"no I2C measurement script found for {symbol}; expected "
+            f"mI2C_{normalized}.txt or mI2C_{normalized}p.txt"
+        )
+
+    def _set_i2c_measurement_buttons(self, *, running: bool) -> None:
+        for control in (
+            *self._i2c_measurement_setup_controls,
+            *self._i2c_measurement_capture_controls,
+        ):
+            win32gui.EnableWindow(control, not running)
+
+    def _run_i2c_measurement(self, measurement_index: int, *, capture: bool) -> None:
+        if self._i2c_script_running:
+            return
+        profile = self._i2c_profile
+        if profile is None or not 0 <= measurement_index < len(profile.measurements):
+            return
+        address = win32gui.GetWindowText(self.i2c_controls["scope_address"]).strip()
+        if not address:
+            self._set_i2c_status("Enter the oscilloscope VISA or raw socket address.")
+            return
+        measurement = profile.measurements[measurement_index]
+        try:
+            script_path = self._find_i2c_measurement_script(measurement.symbol)
+            source_lines = load_measurement_script(script_path, capture=capture)
+            self.i2c_config.update({"IpAddr": address})
+            self._i2c_visa_address = address
+            self._i2c_script_running = True
+            self._i2c_capture_pending = None
+            if capture:
+                normalized = measurement.symbol.replace(";", "_")
+                capture_folder = self.config_path.parent / "testProfiles" / "captures"
+                capture_folder.mkdir(parents=True, exist_ok=True)
+                self._i2c_capture_pending = (
+                    capture_folder
+                    / f"mI2C_{normalized}_P{profile.selected_bus}.png"
+                )
+            win32gui.EnableWindow(self.i2c_controls["run_setup"], False)
+            self._set_i2c_measurement_buttons(running=True)
+            action = "capture" if capture else "setup"
+            self._set_i2c_status(
+                f"Running I2C {measurement.symbol} {action} script..."
+            )
+            self._script_worker.start(
+                "\n".join(source_lines),
+                visa_address=address,
+                variables=self._i2c_script_variables(),
+            )
+        except (OSError, RuntimeError, ValueError) as error:
+            self._i2c_capture_pending = None
+            self._i2c_script_running = False
+            win32gui.EnableWindow(self.i2c_controls["run_setup"], True)
+            self._set_i2c_measurement_buttons(running=False)
+            self._set_i2c_status(f"Could not run I2C measurement: {error}")
+
     def _save_i2c_settings_from_command(self) -> None:
         try:
             self._save_i2c_settings()
@@ -1034,8 +1238,21 @@ class ManualTestCompanionApp:
         self._set_status(message)
 
     def _handle_i2c_command(self, control_id: int, notification: int) -> bool:
+        if notification == _BN_CLICKED and control_id == _I2C_CONTROL_IDS["run_setup"]:
+            self._run_i2c_setup()
+            return True
         profile = self._i2c_profile
         if profile is None:
+            return False
+        if notification == _BN_CLICKED:
+            setup_index = control_id - _I2C_CONTROL_IDS["measurement_setup_base"]
+            capture_index = control_id - _I2C_CONTROL_IDS["measurement_capture_base"]
+            if 0 <= setup_index < len(profile.measurements):
+                self._run_i2c_measurement(setup_index, capture=False)
+                return True
+            if 0 <= capture_index < len(profile.measurements):
+                self._run_i2c_measurement(capture_index, capture=True)
+                return True
             return False
         if notification == _CBN_SELCHANGE and control_id in {
             _I2C_CONTROL_IDS["bus_count"],
@@ -1637,6 +1854,39 @@ class ManualTestCompanionApp:
             control_id=_SCRIPT_CONTROL_IDS["cancel"],
             extra_style=win32con.WS_TABSTOP,
         )
+        self.diagnostic_controls["queue"] = self._create_chamber_control(
+            page,
+            "BUTTON",
+            "Queue",
+            170,
+            0,
+            75,
+            27,
+            control_id=_SCRIPT_CONTROL_IDS["queue"],
+            extra_style=win32con.WS_TABSTOP,
+        )
+        self.diagnostic_controls["run_queue"] = self._create_chamber_control(
+            page,
+            "BUTTON",
+            "Run queue",
+            250,
+            0,
+            90,
+            27,
+            control_id=_SCRIPT_CONTROL_IDS["run_queue"],
+            extra_style=win32con.WS_TABSTOP,
+        )
+        self.diagnostic_controls["clear_queue"] = self._create_chamber_control(
+            page,
+            "BUTTON",
+            "Clear queue",
+            345,
+            0,
+            90,
+            27,
+            control_id=_SCRIPT_CONTROL_IDS["clear_queue"],
+            extra_style=win32con.WS_TABSTOP,
+        )
 
     @staticmethod
     def _temperature_unit_label(celsius: bool) -> str:
@@ -1739,6 +1989,12 @@ class ManualTestCompanionApp:
             self._run_diagnostic_script()
         elif control_id == _SCRIPT_CONTROL_IDS["cancel"]:
             self._cancel_diagnostic_script()
+        elif control_id == _SCRIPT_CONTROL_IDS["queue"]:
+            self._queue_diagnostic_script()
+        elif control_id == _SCRIPT_CONTROL_IDS["run_queue"]:
+            self._run_master_queue()
+        elif control_id == _SCRIPT_CONTROL_IDS["clear_queue"]:
+            self._clear_master_queue()
         else:
             for index in range(4):
                 if control_id == _DCPS_CHANNEL_CONTROL_BASES["apply_voltage"] + index:
@@ -2194,6 +2450,52 @@ class ManualTestCompanionApp:
         else:
             self._frequency_worker.monitor()
 
+    def _queue_diagnostic_script(self) -> None:
+        source = win32gui.GetWindowText(self.diagnostic_controls["script"])
+        if not source.strip():
+            self._set_status("Enter a script before adding it to the queue.")
+            return
+        self._script_worker.queue_script(
+            source,
+            visa_address=win32gui.GetWindowText(
+                self.diagnostic_controls["visa_address"]
+            ).strip(),
+            modbus_host=win32gui.GetWindowText(
+                self.diagnostic_controls["modbus_host"]
+            ).strip(),
+            variables={
+                variable.name.removeprefix("$"): variable.value
+                for variable in self._test_variables
+                if variable.name
+            },
+        )
+        self._set_status(f"Queued diagnostic script ({self._script_worker.pending_count} waiting).")
+
+    def _run_master_queue(self) -> None:
+        if self._script_running or self._master_queue_running:
+            return
+        try:
+            self._master_queue_running = True
+            self._script_running = True
+            self._set_diagnostic_buttons(running=True)
+            win32gui.EnableWindow(self.diagnostic_controls["queue"], False)
+            win32gui.EnableWindow(self.diagnostic_controls["clear_queue"], False)
+            win32gui.EnableWindow(self.diagnostic_controls["run_queue"], False)
+            self._script_worker.start_queued()
+            self._set_status("Running master script queue...")
+        except RuntimeError as error:
+            self._master_queue_running = False
+            self._script_running = False
+            self._set_diagnostic_buttons(running=False)
+            win32gui.EnableWindow(self.diagnostic_controls["queue"], True)
+            win32gui.EnableWindow(self.diagnostic_controls["clear_queue"], True)
+            win32gui.EnableWindow(self.diagnostic_controls["run_queue"], True)
+            self._set_status(str(error))
+
+    def _clear_master_queue(self) -> None:
+        self._script_worker.clear_queue()
+        self._set_status("Master script queue cleared.")
+
     def _run_diagnostic_script(self) -> None:
         if self._script_running:
             return
@@ -2233,6 +2535,9 @@ class ManualTestCompanionApp:
         if self.diagnostic_controls:
             win32gui.EnableWindow(self.diagnostic_controls["run"], not running)
             win32gui.EnableWindow(self.diagnostic_controls["cancel"], running)
+            win32gui.EnableWindow(self.diagnostic_controls["queue"], not running)
+            win32gui.EnableWindow(self.diagnostic_controls["run_queue"], not running)
+            win32gui.EnableWindow(self.diagnostic_controls["clear_queue"], not running)
 
     def _publish_script_result(self, result: ScriptEvent) -> None:
         self._script_results.put(result)
@@ -2245,12 +2550,59 @@ class ManualTestCompanionApp:
                 result = self._script_results.get_nowait()
             except queue.Empty:
                 return
+            if result.kind == "queued_started":
+                output = self.diagnostic_controls["output"]
+                win32gui.SendMessage(output, _EM_SETSEL, -1, -1)
+                win32gui.SendMessage(output, _EM_REPLACESEL, 0, result.text + "\r\n")
+                self._set_status(result.text)
+                continue
+            if result.kind == "queue_completed":
+                self._master_queue_running = False
+                self._script_running = False
+                self._set_diagnostic_buttons(running=False)
+                output = self.diagnostic_controls["output"]
+                win32gui.SendMessage(output, _EM_SETSEL, -1, -1)
+                win32gui.SendMessage(output, _EM_REPLACESEL, 0, result.text + "\r\n")
+                self._set_status(result.text)
+                continue
             if result.kind == "output":
+                if self._i2c_script_running:
+                    self._set_i2c_status(result.text)
+                    continue
                 output = self.diagnostic_controls["output"]
                 win32gui.SendMessage(output, _EM_SETSEL, -1, -1)
                 win32gui.SendMessage(output, _EM_REPLACESEL, 0, result.text + "\r\n")
                 continue
             if result.kind in {"completed", "cancelled", "failed"}:
+                if self._master_queue_running:
+                    if result.kind == "completed":
+                        output = self.diagnostic_controls["output"]
+                        win32gui.SendMessage(output, _EM_SETSEL, -1, -1)
+                        win32gui.SendMessage(output, _EM_REPLACESEL, 0, result.text + "\r\n")
+                        continue
+                    self._master_queue_running = False
+                    self._script_running = False
+                    self._set_diagnostic_buttons(running=False)
+                if self._i2c_script_running:
+                    capture_pending = self._i2c_capture_pending
+                    self._i2c_script_running = False
+                    win32gui.EnableWindow(self.i2c_controls["run_setup"], True)
+                    if result.kind == "completed" and capture_pending is not None:
+                        if self._scope_screenshot_worker is None:
+                            self._scope_screenshot_worker = ScopeScreenshotWorker(
+                                self._publish_scope_screenshot_result
+                            )
+                        self._scope_screenshot_busy = True
+                        self._set_i2c_status("Capturing I2C oscilloscope screenshot...")
+                        self._scope_screenshot_worker.capture(
+                            self._i2c_visa_address,
+                            capture_pending,
+                        )
+                        continue
+                    self._i2c_capture_pending = None
+                    self._set_i2c_measurement_buttons(running=False)
+                    self._set_i2c_status(result.text)
+                    continue
                 self._script_running = False
                 self._set_diagnostic_buttons(running=False)
             win32gui.SendMessage(self.diagnostic_controls["output"], _EM_SETSEL, -1, -1)
@@ -2396,6 +2748,20 @@ class ManualTestCompanionApp:
                 return
             self._scope_screenshot_busy = False
             win32gui.EnableWindow(self.scope_controls["screenshot"], True)
+            if self._i2c_capture_pending is not None:
+                capture_pending = self._i2c_capture_pending
+                self._i2c_capture_pending = None
+                self._set_i2c_measurement_buttons(running=False)
+                win32gui.EnableWindow(self.i2c_controls["run_setup"], True)
+                if result.error is not None:
+                    self._set_i2c_status(
+                        f"I2C screenshot failed: {result.error}"
+                    )
+                else:
+                    self._set_i2c_status(
+                        f"I2C screenshot saved to {capture_pending}."
+                    )
+                return
             if result.error is not None:
                 message = f"Oscilloscope screenshot failed: {result.error}"
             else:
@@ -2980,6 +3346,11 @@ class ManualTestCompanionApp:
         width = max(0, client[2] - client[0])
         right_x = max(330, min(420, width // 2))
         win32gui.MoveWindow(self.i2c_controls["title"], 10, 8, 250, 22, True)
+        if "scope_address" in self.i2c_controls:
+            win32gui.MoveWindow(self.i2c_controls["scope_address_label"], 270, 10, 45, 22, True)
+            win32gui.MoveWindow(self.i2c_controls["scope_address"], 315, 7, max(100, width - 425), 25, True)
+            run_x = min(width - 100, 475)
+            win32gui.MoveWindow(self.i2c_controls["run_setup"], run_x, 7, 90, 25, True)
         win32gui.MoveWindow(self.i2c_controls["status"], 10, 32, max(0, width - 20), 30, True)
         if "bus_count" not in self.i2c_controls:
             return
@@ -3000,10 +3371,29 @@ class ManualTestCompanionApp:
             20,
             True,
         )
-        for index, (include, verify) in enumerate(
+        if "setup_header" in self.i2c_controls:
+            win32gui.MoveWindow(
+                self.i2c_controls["setup_header"],
+                right_x - 180,
+                70,
+                55,
+                20,
+                True,
+            )
+            win32gui.MoveWindow(
+                self.i2c_controls["capture_header"],
+                right_x - 120,
+                70,
+                55,
+                20,
+                True,
+            )
+        for index, (include, verify, setup, capture) in enumerate(
             zip(
                 self._i2c_measurement_include_controls,
                 self._i2c_measurement_verify_controls,
+                self._i2c_measurement_setup_controls,
+                self._i2c_measurement_capture_controls,
                 strict=True,
             )
         ):
@@ -3018,6 +3408,8 @@ class ManualTestCompanionApp:
                 True,
             )
             win32gui.MoveWindow(verify, right_x - 48, y, 18, 20, True)
+            win32gui.MoveWindow(setup, right_x - 180, y, 55, 20, True)
+            win32gui.MoveWindow(capture, right_x - 120, y, 55, 20, True)
         win32gui.MoveWindow(self.i2c_controls["bus_count_label"], right_x, 70, 70, 22, True)
         win32gui.MoveWindow(self.i2c_controls["bus_count"], right_x + 75, 67, 55, 200, True)
         win32gui.MoveWindow(
@@ -3300,6 +3692,24 @@ class ManualTestCompanionApp:
             margin + button_width + gap,
             34,
             button_width,
+            25,
+            True,
+        )
+        queue_x = margin + 2 * (button_width + gap)
+        win32gui.MoveWindow(self.diagnostic_controls["queue"], queue_x, 34, 75, 25, True)
+        win32gui.MoveWindow(
+            self.diagnostic_controls["run_queue"],
+            queue_x + 83,
+            34,
+            90,
+            25,
+            True,
+        )
+        win32gui.MoveWindow(
+            self.diagnostic_controls["clear_queue"],
+            queue_x + 181,
+            34,
+            90,
             25,
             True,
         )

@@ -1,9 +1,16 @@
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
+import zipfile
 
 from manual_test_companion.config import LegacyConfig
-from manual_test_companion.test_profile import I2CProfile, load_i2c_profile, save_i2c_profile
+from manual_test_companion.test_profile import (
+    I2CProfile,
+    load_i2c_profile,
+    load_measurement_script,
+    load_scope_setup,
+    save_i2c_profile,
+)
 
 
 _PROFILE = """\
@@ -85,6 +92,55 @@ class I2CProfileTests(unittest.TestCase):
 
             with self.assertRaisesRegex(ValueError, "empty m0"):
                 load_i2c_profile(path)
+
+    def test_loads_plain_scope_setup_commands(self) -> None:
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "i2c.set"
+            path.write_text("*RST;:ACQUIRE:STATE 1\n:CH1:BANDWIDTH 100E6", encoding="utf-8")
+
+            commands = load_scope_setup(path)
+
+        self.assertEqual(commands, ("*RST", ":ACQUIRE:STATE 1", ":CH1:BANDWIDTH 100E6"))
+
+    def test_loads_zip_scope_setup_commands(self) -> None:
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "i2c.set"
+            with zipfile.ZipFile(path, "w") as archive:
+                archive.writestr("i2c_lrn.set", "*RST;:CH1:LABEL 'SCL'")
+
+            commands = load_scope_setup(path)
+
+        self.assertEqual(commands, ("*RST", ":CH1:LABEL 'SCL'"))
+
+    def test_loads_measurement_setup_and_capture_sections(self) -> None:
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "mI2C_fSCL.txt"
+            path.write_text(
+                "#set\n:CH1:LABEL 'SCL'\n#comment\n#set\n#get\n:MEASure:SOURce CH1\n:MEASure:FREQuency?\n#get\n",
+                encoding="utf-8",
+            )
+
+            setup = load_measurement_script(path, capture=False)
+            capture = load_measurement_script(path, capture=True)
+
+        self.assertEqual(setup, (":CH1:LABEL 'SCL'",))
+        self.assertEqual(capture, (":MEASure:SOURce CH1", ":MEASure:FREQuency?"))
+
+    def test_rejects_measurement_script_without_requested_section(self) -> None:
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "mI2C_tLOW.txt"
+            path.write_text("#set\n:CH1:LABEL 'SCL'\n", encoding="utf-8")
+
+            with self.assertRaisesRegex(ValueError, "has no #get section"):
+                load_measurement_script(path, capture=True)
+
+    def test_rejects_setup_files_without_commands(self) -> None:
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "i2c.set"
+            path.write_text(";;;", encoding="utf-8")
+
+            with self.assertRaisesRegex(ValueError, "contains no SCPI commands"):
+                load_scope_setup(path)
 
 
 if __name__ == "__main__":
