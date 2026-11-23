@@ -43,6 +43,19 @@ class FailingCloseVisa(FakeVisa):
 
 
 class ScriptWorkerTests(unittest.TestCase):
+    def test_passes_settings_variables_to_script_runner(self) -> None:
+        events: queue.Queue[ScriptEvent] = queue.Queue()
+        worker = ScriptWorker(events.put)
+
+        worker.start(
+            "log {$pn}",
+            variables={"pn": "ABC123"},
+        )
+
+        received = [events.get(timeout=2) for _ in range(3)]
+        self.assertEqual([event.kind for event in received], ["started", "output", "completed"])
+        self.assertEqual(received[1].text, "ABC123")
+
     def test_runs_script_publishes_logs_and_closes_sessions(self) -> None:
         events: queue.Queue[ScriptEvent] = queue.Queue()
         visa = FakeVisa()

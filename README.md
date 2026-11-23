@@ -119,6 +119,18 @@ downloads/uploads files using IEEE 488.2 binary blocks. VISA and file transfers
 run on a worker thread, and the address and last folder are saved in the legacy
 `[Oscilloscope_FM]` section.
 
+The I2C tab reads the legacy I2C measurement and signal definitions from
+`testProfiles/ManualTestCompanion_TP.ini`. It allows measurements and
+verification flags to be selected, configures up to eight buses, and maps each
+bus's signals to scope channels. These choices are persisted in the profile's
+legacy `[mI2C]` section. The automated setup/capture sequence and measurement
+scripts are not ported yet.
+
+The Settings tab now edits the legacy `[Variables]` test-variable table. Named
+variables are persisted in the existing `v_r`, `v_c`, `v_<row>.0`, and
+`v_<row>.1` INI format and are available to Diagnostic scripts, including
+`eval` and `exec` directives.
+
 For browser content inside a Python Win32 tab, the intended route is still
 Microsoft Edge WebView2: create its controller with the tab's child HWND and use
 the installed WebView2 Runtime. This preserves the existing embedded-browser
@@ -126,7 +138,8 @@ behavior without bundling a separate Chromium engine. `pywebview` is a higher
 level option when its own browser window is acceptable; it also uses WebView2
 on Windows.
 
-The Python application remains a partial port. Settings and I2C workflows, as
-well as device discovery, script file dialogs, and remaining screenshot/profile
-features, still need to be ported before Python can replace the AutoIt app.
+The Python application remains a partial port. Settings, I2C measurement
+execution, device discovery, script file dialogs, and remaining screenshot/
+profile features still need to be ported before Python can replace the AutoIt
+app.
   

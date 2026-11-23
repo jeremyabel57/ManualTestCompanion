@@ -61,6 +61,7 @@ class ScriptWorker:
         *,
         visa_address: str = "",
         modbus_host: str = "",
+        variables: dict[str, object] | None = None,
     ) -> None:
         with self._lock:
             if self._thread is not None and self._thread.is_alive():
@@ -68,7 +69,7 @@ class ScriptWorker:
             cancel_event = threading.Event()
             thread = threading.Thread(
                 target=self._run,
-                args=(source, visa_address, modbus_host, cancel_event),
+                args=(source, visa_address, modbus_host, variables or {}, cancel_event),
                 name="ManualTestCompanion script",
                 daemon=True,
             )
@@ -87,6 +88,7 @@ class ScriptWorker:
         source: str,
         visa_address: str,
         modbus_host: str,
+        variables: dict[str, object],
         cancel_event: threading.Event,
     ) -> None:
         visa: _VisaSession | None = None
@@ -101,6 +103,7 @@ class ScriptWorker:
             variables = ScriptRunner(
                 visa=visa,
                 modbus=modbus,
+                variables=variables,
                 cancel_event=cancel_event,
                 logger=lambda text: self._publish(ScriptEvent("output", text)),
             ).run(source)

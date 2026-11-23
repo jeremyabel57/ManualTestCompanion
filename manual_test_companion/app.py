@@ -5,6 +5,7 @@ import math
 import queue
 import time
 from ctypes import wintypes
+from dataclasses import replace
 from pathlib import Path
 from typing import Callable
 
@@ -25,6 +26,8 @@ from .script_worker import ScriptEvent, ScriptWorker
 from .scope_file_manager import ScopeDirectory, ScopeDirectoryEntry, scope_join_path
 from .scope_file_manager_worker import ScopeFMResult, ScopeFileManagerWorker
 from .scope_screenshot_worker import ScopeScreenshotResult, ScopeScreenshotWorker
+from .settings import TestVariable, load_test_variables, save_test_variables
+from .test_profile import I2CProfile, SCOPE_CHANNELS, TestMeasurement, load_i2c_profile, save_i2c_profile
 from .webview2_host import WebView2Host
 
 
@@ -48,6 +51,7 @@ _CHAMBER_TIMER = 1
 _SCOPE_TIMER = 2
 _SCOPE_TAB = 0
 _SCOPE_FM_TAB = 4
+_I2C_TAB = 6
 _CHAMBER_TAB = 1
 _DCPS_TAB = 2
 _FREQUENCY_TAB = 3
@@ -58,6 +62,19 @@ _BM_GETCHECK = 0x00F0
 _BM_SETCHECK = 0x00F1
 _BST_CHECKED = 1
 _BN_CLICKED = 0
+_CBN_SELCHANGE = 1
+_CB_ADDSTRING = 0x0143
+_CB_GETCURSEL = 0x0147
+_CB_RESETCONTENT = 0x014B
+_CB_SETCURSEL = 0x014E
+_I2C_CONTROL_IDS = {
+    "bus_count": 4601,
+    "bus_select": 4602,
+    "bus_name": 4603,
+    "measurement_include_base": 4700,
+    "measurement_verify_base": 4800,
+    "signal_channel_base": 4900,
+}
 _CHAMBER_CONTROL_IDS = {
     "connect": 4011,
     "temperature_units": 4012,
@@ -99,6 +116,15 @@ _SCOPE_FM_CONTROL_IDS = {
     "list": 4504,
     "upload": 4505,
 }
+_SETTINGS_CONTROL_IDS = {
+    "list": 4551,
+    "name": 4552,
+    "value": 4553,
+    "add": 4554,
+    "delete": 4555,
+    "save": 4556,
+}
+_SETTINGS_TAB = 5
 _LB_GETCURSEL = 0x0188
 _LB_ADDSTRING = 0x0180
 _LB_RESETCONTENT = 0x0184
@@ -174,6 +200,18 @@ class ManualTestCompanionApp:
         self.frequency_config = LegacyConfig(self.config_path, "FC")
         self.scope_config = LegacyConfig(self.config_path, "Oscillocope")
         self.scope_fm_config = LegacyConfig(self.config_path, "Oscilloscope_FM")
+        self._test_variables = load_test_variables(self.config_path)
+        self.i2c_profile_path = (
+            self.config_path.parent
+            / "testProfiles"
+            / f"{self.config_path.stem}_TP.ini"
+        )
+        self._i2c_profile: I2CProfile | None = None
+        self._i2c_profile_error = ""
+        try:
+            self._i2c_profile = load_i2c_profile(self.i2c_profile_path)
+        except ValueError as error:
+            self._i2c_profile_error = str(error)
         self.instance = win32api.GetModuleHandle(None)
         self.class_name = f"ManualTestCompanion.{id(self):x}"
         self.page_class_name = f"{self.class_name}.Page"
@@ -187,6 +225,13 @@ class ManualTestCompanionApp:
         self.frequency_controls: dict[str, int] = {}
         self.scope_controls: dict[str, int] = {}
         self.scope_fm_controls: dict[str, int] = {}
+        self.i2c_controls: dict[str, int] = {}
+        self.settings_controls: dict[str, int] = {}
+        self._i2c_measurement_include_controls: list[int] = []
+        self._i2c_measurement_label_controls: list[int] = []
+        self._i2c_measurement_verify_controls: list[int] = []
+        self._i2c_signal_label_controls: list[int] = []
+        self._i2c_signal_channel_controls: list[int] = []
         self.diagnostic_controls: dict[str, int] = {}
         self._chamber_results: queue.SimpleQueue[ChamberResult] = queue.SimpleQueue()
         self._dcps_results: queue.SimpleQueue[DCPSResult] = queue.SimpleQueue()
@@ -363,6 +408,8 @@ class ManualTestCompanionApp:
                     _DCPS_TAB,
                     _FREQUENCY_TAB,
                     _SCOPE_FM_TAB,
+                    _SETTINGS_TAB,
+                    _I2C_TAB,
                     _DIAGNOSTIC_TAB,
                 }
                 else f"{description}\n\nThis tab has not been ported yet."
@@ -402,13 +449,17 @@ class ManualTestCompanionApp:
                 self._create_frequency_controls(page)
             elif index == _SCOPE_FM_TAB:
                 self._create_scope_fm_controls(page)
+            elif index == _SETTINGS_TAB:
+                self._create_settings_controls(page)
+            elif index == _I2C_TAB:
+                self._create_i2c_controls(page)
             if index == _DIAGNOSTIC_TAB:
                 self._create_diagnostic_controls(page)
 
         self.status = win32gui.CreateWindowEx(
             0,
             "STATIC",
-            "Python migration in progress; Oscilloscope, ScopeFM, Chamber, DC power supply, frequency counter, and Diagnostic are available.",
+            "Python migration in progress; Oscilloscope, ScopeFM, Chamber, DC power supply, frequency counter, I2C profile, and Diagnostic are available.",
             win32con.WS_CHILD | win32con.WS_VISIBLE | win32con.SS_LEFT,
             8,
             0,
@@ -576,6 +627,451 @@ class ManualTestCompanionApp:
             page, "STATIC", "Disconnected", 10, 422, 700, 22
         )
         self._update_scope_fm_controls()
+
+    def _create_settings_controls(self, page: int) -> None:
+        self._create_chamber_control(page, "STATIC", "Test variables", 10, 10, 180, 22)
+        self.settings_controls["status"] = self._create_chamber_control(
+            page, "STATIC", "Variables are available to scripts.", 10, 36, 520, 22
+        )
+        self.settings_controls["list"] = self._create_chamber_control(
+            page,
+            "LISTBOX",
+            "",
+            10,
+            64,
+            420,
+            240,
+            control_id=_SETTINGS_CONTROL_IDS["list"],
+            extra_style=(
+                win32con.WS_BORDER
+                | win32con.WS_VSCROLL
+                | win32con.WS_TABSTOP
+                | win32con.LBS_NOTIFY
+                | win32con.LBS_HASSTRINGS
+            ),
+        )
+        self._create_chamber_control(page, "STATIC", "Name:", 10, 322, 48, 22)
+        self.settings_controls["name"] = self._create_chamber_control(
+            page,
+            "EDIT",
+            "",
+            62,
+            318,
+            160,
+            25,
+            control_id=_SETTINGS_CONTROL_IDS["name"],
+            extra_style=win32con.WS_BORDER | win32con.ES_AUTOHSCROLL | win32con.WS_TABSTOP,
+        )
+        self._create_chamber_control(page, "STATIC", "Value:", 232, 322, 48, 22)
+        self.settings_controls["value"] = self._create_chamber_control(
+            page,
+            "EDIT",
+            "",
+            282,
+            318,
+            148,
+            25,
+            control_id=_SETTINGS_CONTROL_IDS["value"],
+            extra_style=win32con.WS_BORDER | win32con.ES_AUTOHSCROLL | win32con.WS_TABSTOP,
+        )
+        self.settings_controls["add"] = self._create_chamber_control(
+            page,
+            "BUTTON",
+            "Add",
+            10,
+            356,
+            80,
+            28,
+            control_id=_SETTINGS_CONTROL_IDS["add"],
+            extra_style=win32con.WS_TABSTOP,
+        )
+        self.settings_controls["delete"] = self._create_chamber_control(
+            page,
+            "BUTTON",
+            "Delete",
+            98,
+            356,
+            80,
+            28,
+            control_id=_SETTINGS_CONTROL_IDS["delete"],
+            extra_style=win32con.WS_TABSTOP,
+        )
+        self.settings_controls["save"] = self._create_chamber_control(
+            page,
+            "BUTTON",
+            "Save",
+            186,
+            356,
+            80,
+            28,
+            control_id=_SETTINGS_CONTROL_IDS["save"],
+            extra_style=win32con.WS_TABSTOP,
+        )
+        self._render_test_variables()
+
+    def _create_i2c_controls(self, page: int) -> None:
+        self.i2c_controls["title"] = self._create_chamber_control(
+            page, "STATIC", "I2C test profile", 10, 10, 250, 22
+        )
+        self.i2c_controls["status"] = self._create_chamber_control(
+            page,
+            "STATIC",
+            self._i2c_profile_error
+            or "Select measurements and scope channels. Measurement scripts are not ported yet.",
+            10,
+            34,
+            740,
+            30,
+        )
+        if self._i2c_profile is None:
+            return
+
+        self.i2c_controls["use_header"] = self._create_chamber_control(
+            page, "STATIC", "Use", 10, 70, 40, 20
+        )
+        self.i2c_controls["measurement_header"] = self._create_chamber_control(
+            page, "STATIC", "Measurement", 54, 70, 220, 20
+        )
+        self.i2c_controls["verify_header"] = self._create_chamber_control(
+            page, "STATIC", "Verify", 285, 70, 60, 20
+        )
+        for index, measurement in enumerate(self._i2c_profile.measurements):
+            include = self._create_chamber_control(
+                page,
+                "BUTTON",
+                "",
+                16,
+                96 + index * 25,
+                18,
+                20,
+                control_id=_I2C_CONTROL_IDS["measurement_include_base"] + index,
+                extra_style=win32con.BS_AUTOCHECKBOX | win32con.WS_TABSTOP,
+            )
+            verify = self._create_chamber_control(
+                page,
+                "BUTTON",
+                "",
+                300,
+                96 + index * 25,
+                18,
+                20,
+                control_id=_I2C_CONTROL_IDS["measurement_verify_base"] + index,
+                extra_style=win32con.BS_AUTOCHECKBOX | win32con.WS_TABSTOP,
+            )
+            description = f" - {measurement.description}" if measurement.description else ""
+            label = self._create_chamber_control(
+                page,
+                "STATIC",
+                f"{measurement.symbol}{description}",
+                54,
+                96 + index * 25,
+                235,
+                20,
+            )
+            win32gui.SendMessage(
+                include,
+                _BM_SETCHECK,
+                _BST_CHECKED if measurement.included else 0,
+                0,
+            )
+            win32gui.SendMessage(
+                verify,
+                _BM_SETCHECK,
+                _BST_CHECKED if measurement.verify_before_capture else 0,
+                0,
+            )
+            self._i2c_measurement_include_controls.append(include)
+            self._i2c_measurement_label_controls.append(label)
+            self._i2c_measurement_verify_controls.append(verify)
+
+        self.i2c_controls["bus_count_label"] = self._create_chamber_control(
+            page, "STATIC", "Bus count:", 360, 70, 70, 22
+        )
+        self.i2c_controls["bus_count"] = self._create_chamber_control(
+            page,
+            "COMBOBOX",
+            "",
+            435,
+            67,
+            65,
+            200,
+            control_id=_I2C_CONTROL_IDS["bus_count"],
+            extra_style=win32con.CBS_DROPDOWNLIST | win32con.WS_TABSTOP,
+        )
+        for count in range(1, 9):
+            _add_combo_item(self.i2c_controls["bus_count"], str(count))
+        self.i2c_controls["bus_select_label"] = self._create_chamber_control(
+            page, "STATIC", "Configure bus:", 510, 70, 90, 22
+        )
+        self.i2c_controls["bus_select"] = self._create_chamber_control(
+            page,
+            "COMBOBOX",
+            "",
+            605,
+            67,
+            65,
+            200,
+            control_id=_I2C_CONTROL_IDS["bus_select"],
+            extra_style=win32con.CBS_DROPDOWNLIST | win32con.WS_TABSTOP,
+        )
+        self.i2c_controls["bus_name_label"] = self._create_chamber_control(
+            page, "STATIC", "Bus name:", 360, 104, 70, 22
+        )
+        self.i2c_controls["bus_name"] = self._create_chamber_control(
+            page,
+            "EDIT",
+            "",
+            435,
+            100,
+            120,
+            25,
+            control_id=_I2C_CONTROL_IDS["bus_name"],
+            extra_style=win32con.WS_BORDER | win32con.ES_AUTOHSCROLL | win32con.WS_TABSTOP,
+        )
+        self.i2c_controls["signal_header"] = self._create_chamber_control(
+            page, "STATIC", "Signal", 360, 137, 160, 20
+        )
+        self.i2c_controls["channel_header"] = self._create_chamber_control(
+            page, "STATIC", "Scope channel", 535, 137, 120, 20
+        )
+        for index, signal in enumerate(self._i2c_profile.signals):
+            y = 163 + index * 30
+            label = self._create_chamber_control(
+                page,
+                "STATIC",
+                f"{signal.name} - {signal.description}" if signal.description else signal.name,
+                360,
+                y,
+                165,
+                24,
+            )
+            channel = self._create_chamber_control(
+                page,
+                "COMBOBOX",
+                "",
+                535,
+                y,
+                120,
+                200,
+                control_id=_I2C_CONTROL_IDS["signal_channel_base"] + index,
+                extra_style=win32con.CBS_DROPDOWNLIST | win32con.WS_TABSTOP,
+            )
+            for channel_name in SCOPE_CHANNELS:
+                _add_combo_item(channel, channel_name)
+            self._i2c_signal_label_controls.append(label)
+            self._i2c_signal_channel_controls.append(channel)
+        self._render_i2c_bus()
+
+    def _render_test_variables(self) -> None:
+        if "list" not in self.settings_controls:
+            return
+        listbox = self.settings_controls["list"]
+        win32gui.SendMessage(listbox, _LB_RESETCONTENT, 0, 0)
+        for variable in self._test_variables:
+            name = variable.name.strip() or "(unnamed)"
+            _add_combo_item(listbox, f"{name} = {variable.value}")
+
+    def _settings_selected_index(self) -> int:
+        return int(_send_message(
+            self.settings_controls["list"],
+            _LB_GETCURSEL,
+            0,
+            None,
+        ))
+
+    def _select_test_variable(self) -> None:
+        index = self._settings_selected_index()
+        if 0 <= index < len(self._test_variables):
+            variable = self._test_variables[index]
+            win32gui.SetWindowText(self.settings_controls["name"], variable.name)
+            win32gui.SetWindowText(self.settings_controls["value"], variable.value)
+
+    def _save_test_variables(self) -> None:
+        save_test_variables(self.config_path, self._test_variables)
+        win32gui.SetWindowText(
+            self.settings_controls["status"],
+            f"Saved {len(self._test_variables)} test variable(s).",
+        )
+        self._set_status(f"Saved test variables to {self.config_path}.")
+
+    def _handle_settings_command(self, control_id: int, notification: int) -> bool:
+        if control_id == _SETTINGS_CONTROL_IDS["list"] and notification == _LBN_DBLCLK:
+            self._select_test_variable()
+            return True
+        if notification != _BN_CLICKED:
+            return False
+        if control_id == _SETTINGS_CONTROL_IDS["add"]:
+            name = win32gui.GetWindowText(self.settings_controls["name"]).strip()
+            value = win32gui.GetWindowText(self.settings_controls["value"])
+            if not name:
+                win32gui.SetWindowText(
+                    self.settings_controls["status"],
+                    "Enter a variable name before adding it.",
+                )
+                return True
+            normalized = name.removeprefix("$")
+            variables = list(self._test_variables)
+            existing = next(
+                (index for index, variable in enumerate(variables)
+                 if variable.name.removeprefix("$").casefold() == normalized.casefold()),
+                None,
+            )
+            if existing is not None:
+                variables[existing] = TestVariable(normalized, value)
+            else:
+                variables.append(TestVariable(normalized, value))
+            self._test_variables = tuple(variables)
+            self._render_test_variables()
+        elif control_id == _SETTINGS_CONTROL_IDS["delete"]:
+            index = self._settings_selected_index()
+            if 0 <= index < len(self._test_variables):
+                variables = list(self._test_variables)
+                del variables[index]
+                self._test_variables = tuple(variables)
+                win32gui.SetWindowText(self.settings_controls["name"], "")
+                win32gui.SetWindowText(self.settings_controls["value"], "")
+                self._render_test_variables()
+        elif control_id == _SETTINGS_CONTROL_IDS["save"]:
+            try:
+                self._save_test_variables()
+            except OSError as error:
+                message = f"Could not save test variables to {self.config_path}: {error}"
+                win32gui.SetWindowText(self.settings_controls["status"], message)
+                self._set_status(message)
+            return True
+        return control_id in {
+            _SETTINGS_CONTROL_IDS["add"],
+            _SETTINGS_CONTROL_IDS["delete"],
+        }
+
+    def _render_i2c_bus(self) -> None:
+        profile = self._i2c_profile
+        if profile is None or "bus_count" not in self.i2c_controls:
+            return
+        _set_combo_selection(self.i2c_controls["bus_count"], profile.bus_count - 1)
+        bus_select = self.i2c_controls["bus_select"]
+        win32gui.SendMessage(bus_select, _CB_RESETCONTENT, 0, 0)
+        for bus_number in range(1, profile.bus_count + 1):
+            _add_combo_item(bus_select, str(bus_number))
+        _set_combo_selection(bus_select, profile.selected_bus - 1)
+        bus_index = profile.selected_bus - 1
+        win32gui.SetWindowText(
+            self.i2c_controls["bus_name"],
+            profile.bus_names[bus_index],
+        )
+        for index, combo in enumerate(self._i2c_signal_channel_controls):
+            channel = profile.channel_assignments[bus_index][index]
+            _set_combo_selection(combo, SCOPE_CHANNELS.index(channel) if channel else -1)
+
+    def _collect_i2c_profile(
+        self,
+        *,
+        bus_count: int | None = None,
+        selected_bus: int | None = None,
+    ) -> I2CProfile | None:
+        profile = self._i2c_profile
+        if profile is None or "bus_count" not in self.i2c_controls:
+            return profile
+
+        bus_names = list(profile.bus_names)
+        assignments = [list(channels) for channels in profile.channel_assignments]
+        current_bus = profile.selected_bus - 1
+        bus_name = win32gui.GetWindowText(self.i2c_controls["bus_name"]).strip()
+        bus_names[current_bus] = bus_name or f"P{current_bus}"
+        for index, combo in enumerate(self._i2c_signal_channel_controls):
+            selected = _combo_selection(combo)
+            assignments[current_bus][index] = (
+                SCOPE_CHANNELS[selected] if 0 <= selected < len(SCOPE_CHANNELS) else ""
+            )
+
+        measurements = tuple(
+            replace(
+                measurement,
+                included=(
+                    win32gui.SendMessage(include, _BM_GETCHECK, 0, 0) == _BST_CHECKED
+                ),
+                verify_before_capture=(
+                    win32gui.SendMessage(verify, _BM_GETCHECK, 0, 0) == _BST_CHECKED
+                ),
+            )
+            for measurement, include, verify in zip(
+                profile.measurements,
+                self._i2c_measurement_include_controls,
+                self._i2c_measurement_verify_controls,
+                strict=True,
+            )
+        )
+        actual_bus_count = bus_count or _combo_selection(self.i2c_controls["bus_count"]) + 1
+        actual_bus = selected_bus or _combo_selection(self.i2c_controls["bus_select"]) + 1
+        actual_bus = min(actual_bus, actual_bus_count)
+        return replace(
+            profile,
+            measurements=measurements,
+            bus_count=actual_bus_count,
+            selected_bus=actual_bus,
+            bus_names=tuple(bus_names),
+            channel_assignments=tuple(tuple(channels) for channels in assignments),
+        )
+
+    def _save_i2c_settings(self) -> None:
+        updated = self._collect_i2c_profile()
+        if updated is None or "bus_count" not in self.i2c_controls:
+            return
+        save_i2c_profile(self.i2c_profile_path, updated)
+        self._i2c_profile = updated
+
+    def _save_i2c_settings_from_command(self) -> None:
+        try:
+            self._save_i2c_settings()
+        except OSError as error:
+            self._set_i2c_status(
+                f"I2C preferences could not be saved to {self.i2c_profile_path}: {error}"
+            )
+
+    def _set_i2c_status(self, message: str) -> None:
+        if "status" in self.i2c_controls:
+            win32gui.SetWindowText(self.i2c_controls["status"], message)
+        self._set_status(message)
+
+    def _handle_i2c_command(self, control_id: int, notification: int) -> bool:
+        profile = self._i2c_profile
+        if profile is None:
+            return False
+        if notification == _CBN_SELCHANGE and control_id in {
+            _I2C_CONTROL_IDS["bus_count"],
+            _I2C_CONTROL_IDS["bus_select"],
+            *(
+                _I2C_CONTROL_IDS["signal_channel_base"] + index
+                for index in range(len(profile.signals))
+            ),
+        }:
+            if control_id == _I2C_CONTROL_IDS["bus_count"]:
+                count = _combo_selection(self.i2c_controls["bus_count"]) + 1
+                self._i2c_profile = self._collect_i2c_profile(
+                    bus_count=count,
+                    selected_bus=min(profile.selected_bus, count),
+                )
+                self._render_i2c_bus()
+            elif control_id == _I2C_CONTROL_IDS["bus_select"]:
+                bus = _combo_selection(self.i2c_controls["bus_select"]) + 1
+                self._i2c_profile = self._collect_i2c_profile(selected_bus=bus)
+                self._render_i2c_bus()
+            else:
+                self._i2c_profile = self._collect_i2c_profile()
+            self._save_i2c_settings_from_command()
+            return True
+
+        if notification == _BN_CLICKED and (
+            _I2C_CONTROL_IDS["measurement_include_base"]
+            <= control_id
+            < _I2C_CONTROL_IDS["measurement_include_base"] + len(profile.measurements)
+            or _I2C_CONTROL_IDS["measurement_verify_base"]
+            <= control_id
+            < _I2C_CONTROL_IDS["measurement_verify_base"] + len(profile.measurements)
+        ):
+            self._save_i2c_settings_from_command()
+            return True
+        return False
 
     def _create_chamber_controls(self, page: int) -> None:
         self._create_chamber_control(page, "STATIC", "IP address:", 15, 20, 75, 22)
@@ -1149,6 +1645,10 @@ class ManualTestCompanionApp:
     def _handle_command(self, wparam: int) -> bool:
         notification = (wparam >> 16) & 0xFFFF
         control_id = wparam & 0xFFFF
+        if self._handle_settings_command(control_id, notification):
+            return True
+        if self._handle_i2c_command(control_id, notification):
+            return True
         if (
             control_id == _SCOPE_FM_CONTROL_IDS["list"]
             and notification == _LBN_DBLCLK
@@ -1713,6 +2213,11 @@ class ManualTestCompanionApp:
                 source,
                 visa_address=self._diagnostic_visa_address,
                 modbus_host=self._diagnostic_modbus_host,
+                variables={
+                    variable.name.removeprefix("$"): variable.value
+                    for variable in self._test_variables
+                    if variable.name
+                },
             )
         except RuntimeError as error:
             self._script_running = False
@@ -2356,6 +2861,8 @@ class ManualTestCompanionApp:
         self._layout_diagnostic_controls()
         self._layout_dcps_controls()
         self._layout_frequency_controls()
+        self._layout_i2c_controls()
+        self._layout_settings_controls()
         win32gui.MoveWindow(self.status, 8, height - status_height, max(0, width - 16), status_height, True)
 
     def _layout_frequency_controls(self) -> None:
@@ -2436,6 +2943,134 @@ class ManualTestCompanionApp:
             self._scope_host.set_bounds(0, 40, width, max(0, height - 40))
         except OSError as error:
             self._set_scope_status(f"Could not resize the embedded browser: {error}")
+
+    def _layout_settings_controls(self) -> None:
+        if not self.settings_controls:
+            return
+        page = self.pages[_SETTINGS_TAB]
+        client = win32gui.GetClientRect(page)
+        width = max(0, client[2] - client[0])
+        win32gui.MoveWindow(
+            self.settings_controls["status"],
+            10,
+            36,
+            max(0, width - 20),
+            22,
+            True,
+        )
+        win32gui.MoveWindow(
+            self.settings_controls["list"],
+            10,
+            64,
+            max(0, width - 20),
+            240,
+            True,
+        )
+        value_x = min(282, max(232, width - 168))
+        win32gui.MoveWindow(self.settings_controls["name"], 62, 318, 160, 25, True)
+        win32gui.MoveWindow(self.settings_controls["value"], value_x, 318, max(148, width - value_x - 10), 25, True)
+        win32gui.MoveWindow(self.settings_controls["add"], 10, 356, 80, 28, True)
+        win32gui.MoveWindow(self.settings_controls["delete"], 98, 356, 80, 28, True)
+        win32gui.MoveWindow(self.settings_controls["save"], 186, 356, 80, 28, True)
+
+    def _layout_i2c_controls(self) -> None:
+        if not self.i2c_controls:
+            return
+        client = win32gui.GetClientRect(self.pages[_I2C_TAB])
+        width = max(0, client[2] - client[0])
+        right_x = max(330, min(420, width // 2))
+        win32gui.MoveWindow(self.i2c_controls["title"], 10, 8, 250, 22, True)
+        win32gui.MoveWindow(self.i2c_controls["status"], 10, 32, max(0, width - 20), 30, True)
+        if "bus_count" not in self.i2c_controls:
+            return
+        win32gui.MoveWindow(self.i2c_controls["use_header"], 10, 70, 40, 20, True)
+        win32gui.MoveWindow(
+            self.i2c_controls["measurement_header"],
+            54,
+            70,
+            max(150, right_x - 135),
+            20,
+            True,
+        )
+        win32gui.MoveWindow(
+            self.i2c_controls["verify_header"],
+            right_x - 60,
+            70,
+            60,
+            20,
+            True,
+        )
+        for index, (include, verify) in enumerate(
+            zip(
+                self._i2c_measurement_include_controls,
+                self._i2c_measurement_verify_controls,
+                strict=True,
+            )
+        ):
+            y = 96 + index * 25
+            win32gui.MoveWindow(include, 16, y, 18, 20, True)
+            win32gui.MoveWindow(
+                self._i2c_measurement_label_controls[index],
+                54,
+                y,
+                max(150, right_x - 135),
+                20,
+                True,
+            )
+            win32gui.MoveWindow(verify, right_x - 48, y, 18, 20, True)
+        win32gui.MoveWindow(self.i2c_controls["bus_count_label"], right_x, 70, 70, 22, True)
+        win32gui.MoveWindow(self.i2c_controls["bus_count"], right_x + 75, 67, 55, 200, True)
+        win32gui.MoveWindow(
+            self.i2c_controls["bus_select_label"],
+            right_x + 140,
+            70,
+            90,
+            22,
+            True,
+        )
+        win32gui.MoveWindow(
+            self.i2c_controls["bus_select"],
+            right_x + 230,
+            67,
+            60,
+            200,
+            True,
+        )
+        win32gui.MoveWindow(self.i2c_controls["bus_name_label"], right_x, 104, 70, 22, True)
+        win32gui.MoveWindow(
+            self.i2c_controls["bus_name"],
+            right_x + 75,
+            100,
+            130,
+            25,
+            True,
+        )
+        win32gui.MoveWindow(
+            self.i2c_controls["signal_header"],
+            right_x,
+            137,
+            160,
+            20,
+            True,
+        )
+        win32gui.MoveWindow(
+            self.i2c_controls["channel_header"],
+            right_x + 175,
+            137,
+            120,
+            20,
+            True,
+        )
+        for index, (label, channel) in enumerate(
+            zip(
+                self._i2c_signal_label_controls,
+                self._i2c_signal_channel_controls,
+                strict=True,
+            )
+        ):
+            y = 163 + index * 30
+            win32gui.MoveWindow(label, right_x, y, 165, 24, True)
+            win32gui.MoveWindow(channel, right_x + 175, y, 120, 200, True)
 
     def _layout_scope_fm_controls(self) -> None:
         if not self.scope_fm_controls:
@@ -2700,6 +3335,14 @@ class ManualTestCompanionApp:
         self._save_frequency_settings()
         self._save_scope_settings()
         self._save_scope_fm_settings()
+        self._save_i2c_settings()
+        if self.settings_controls:
+            try:
+                self._save_test_variables()
+            except OSError as error:
+                raise OSError(
+                    f"could not save test variables to {self.config_path}: {error}"
+                ) from error
         self._save_diagnostic_settings()
 
     def _save_scope_settings(self) -> None:
@@ -2857,6 +3500,19 @@ class ManualTestCompanionApp:
             win32gui.PostQuitMessage(0)
             return 0
         return win32gui.DefWindowProc(hwnd, message, wparam, lparam)
+
+
+def _add_combo_item(combo: int, value: str) -> None:
+    text = ctypes.create_unicode_buffer(value)
+    _send_message(combo, _CB_ADDSTRING, 0, ctypes.cast(text, ctypes.c_void_p))
+
+
+def _combo_selection(combo: int) -> int:
+    return int(_send_message(combo, _CB_GETCURSEL, 0, None))
+
+
+def _set_combo_selection(combo: int, index: int) -> None:
+    _send_message(combo, _CB_SETCURSEL, index, None)
 
 
 def _percent_position(value: float) -> int:
